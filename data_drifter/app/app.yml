@@ -1,0 +1,14 @@
+# Databricks App Configuration
+
+command: ["streamlit", "run", "app.py"]
+
+env:
+  # Databricks authentication 
+  - name: DATABRICKS_CLIENT_ID
+    valueFrom: default
+  - name: DATABRICKS_CLIENT_SECRET
+    valueFrom: secret
+
+  # SQL Warehouse 
+  - name: WAREHOUSE_ID
+    valueFrom: sql-warehouse

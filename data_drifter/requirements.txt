@@ -1,0 +1,22 @@
+# Zerobus Python SDK (Public Preview)
+databricks-zerobus-ingest-sdk
+
+# Databricks SQL connector (for table management scripts)
+databricks-sql-connector>=3.0.0
+databricks-sdk>=0.20.0
+
+# Data generation and manipulation
+faker>=20.0.0
+numpy>=1.24.0
+
+# Configuration
+tomli>=2.0.0; python_version<"3.11"
+toml>=0.10.2
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+# Utilities
+python-dateutil>=2.8.2
+
+# Land/water detection (offline)
+global-land-mask>=1.0.0

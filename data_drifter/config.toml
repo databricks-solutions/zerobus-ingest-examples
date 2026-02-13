@@ -1,0 +1,133 @@
+# Zerobus Sailboat Telemetry Demo Configuration
+
+[zerobus]
+# Zerobus server endpoint (e.g., "1234567890123456.zerobus.us-west-2.cloud.databricks.com")
+server_endpoint = "your-server-endpoint.cloud.databricks.com"
+
+# Databricks workspace URL (e.g., "https://your-workspace.cloud.databricks.com")
+workspace_url = "https://your-workspace.cloud.databricks.com"
+
+# Target table name in catalog.schema.table format
+table_name = "catalog.schema.sailboat_telemetry"
+
+# Weather station table (for weather data emissions via REST API)
+weather_station_table_name = "catalog.schema.weather_station"
+
+[fleet]
+# Number of sailboats in the fleet
+num_boats = 6
+
+[race_course]
+# Starting GPS coordinates (center of start line)
+start_lat = 16.981578
+start_lon = -61.798147
+
+# Length of start/finish lines in nautical miles (perpendicular to course)
+line_length_nm = 0.1
+
+# List of marks - Format: [[lat1, lon1], [lat2, lon2], ...]
+# - Boats must round each mark (except the last) on the port (left) side in sequence
+# - The LAST mark in this list is the finish line position (boats cross the finish line here)
+# - All marks before the last are waypoints that must be rounded
+marks = [
+    [16.95559843346664, -61.75580048570026],
+    [16.991845832960536, -61.63309004429039],
+    [17.759408779049075, -61.556503524397854],
+    [17.753300509964436, -62.997778668841484],
+    [17.529769595376052, -63.1617890022435],
+    [15.853082883516507, -61.84422163003174],
+    [15.9460897700662, -61.49656278851349],
+    [16.211003255929572, -61.146985487428545],
+    [16.274023731929635, -61.13271582982955],
+    [16.98475892669333, -61.67425528514903]
+]
+
+# Mark rounding zone radius in nautical miles (0.1 nm = ~600 feet)
+# If boat is within this distance, mark is considered rounded
+mark_rounding_radius_nm = 0.1
+
+[weather]
+# Base wind direction in degrees (where wind comes FROM, 0-360)
+# 0 = North, 90 = East, 180 = South, 270 = West
+base_wind_direction = 45
+
+# Minimum wind speed for the race (knots)
+min_wind_speed = 4
+
+# Maximum wind speed for the race (knots)
+max_wind_speed = 21
+
+# Wind direction variation (degrees +/- from base wind direction)
+wind_direction_variation = 90
+
+# Weather stability and change behavior
+# Minimum time weather stays stable before changing (seconds of race time)
+min_weather_stability_seconds = 300  # 5 minutes minimum
+
+# Maximum time weather stays stable (seconds of race time)
+max_weather_stability_seconds = 900  # 15 minutes maximum
+
+# How gradually wind changes during transitions
+wind_speed_change_rate = 0.5        # knots per update during transition
+wind_direction_change_rate = 2.0    # degrees per update during transition
+
+# Probability of different weather event types (must sum to ~1.0)
+frontal_passage_probability = 0.10   # 15% - big wind shift and speed change
+gradual_shift_probability = 0.70     # 65% - slow, steady change
+sudden_gust_probability = 0.20       # 20% - temporary speed spike
+
+# Event characteristics
+# Frontal passage: large shift in direction (20-40°) and speed (5-10 knots)
+frontal_direction_change_min = 20
+frontal_direction_change_max = 40
+frontal_speed_change_min = 5
+frontal_speed_change_max = 10
+
+# Gradual shift: small changes over time (5-15°, 2-5 knots)
+gradual_direction_change_min = 5
+gradual_direction_change_max = 15
+gradual_speed_change_min = 2
+gradual_speed_change_max = 5
+
+# Sudden gust: speed increase that decays back (5-8 knots increase)
+gust_speed_increase_min = 5
+gust_speed_increase_max = 8
+gust_duration_seconds = 60  # 1 minute
+
+[telemetry]
+# When the race starts (ISO 8601 format in UTC)
+# This timestamp will appear in the first telemetry record
+race_start_time = "2025-01-15T10:00:00Z"
+
+# How long the race lasts in RACE TIME (seconds)
+# Examples:
+#   3600 = 1 hour race
+#   21600 = 6 hour race
+#   86400 = 24 hour race
+#   345600 = 4 day race
+# Set to 0 for unlimited (run until all boats finish or Ctrl+C)
+race_duration_seconds = 172800
+
+# How long you want to WATCH the race in REAL TIME (seconds)
+# This controls the playback speed / time acceleration
+# Examples:
+#   600 = watch 4-day race in 10 minutes (576x speed)
+#   1800 = watch 4-day race in 30 minutes (192x speed)
+#   3600 = watch 4-day race in 1 hour (96x speed)
+real_time_duration_seconds = 300
+
+# How often to emit telemetry in RACE TIME (seconds)
+# This is the interval between telemetry records in race time
+# Examples:
+#   30 = emit every 30 seconds of race time
+#   60 = emit every minute of race time
+#   300 = emit every 5 minutes of race time
+emission_interval_seconds = 60  # 1 minute of race time
+
+# Interval for printing statistics in REAL TIME (seconds)
+stats_interval_seconds = 5.0
+
+[warehouse]
+# SQL Warehouse ID for app resource permissions
+# The app will be granted CAN_USE permission on this warehouse
+sql_warehouse_id = "<your warehouse id here>" 

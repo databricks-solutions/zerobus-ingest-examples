@@ -1,0 +1,7 @@
+streamlit>=1.28.0
+pandas>=2.0.0
+databricks-sql-connector>=3.0.0
+databricks-sdk>=0.20.0
+tomli>=2.0.0; python_version < '3.11'
+folium>=0.14.0
+streamlit-folium>=0.15.0

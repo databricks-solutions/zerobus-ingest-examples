@@ -1,0 +1,200 @@
+# Databricks Asset Bundle Configuration
+# Data Drifter Regatta - Sailboat Telemetry Analysis
+#
+# This bundle defines all deployment resources:
+# - Apps: Streamlit application for real-time race visualization
+# - Jobs: Table creation, permissions, and analysis workflows
+#
+# Variables are populated from config.toml via deploy.sh script
+
+bundle:
+  name: data_drifter_regatta
+
+# Variables (minimal set for notebooks only - app reads config.toml directly)
+variables:
+  # Table names (for notebook parameters)
+  telemetry_table:
+    description: "Full table name for sailboat telemetry (catalog.schema.table)"
+    default: ""
+
+  weather_table:
+    description: "Full table name for weather station data (catalog.schema.table)"
+    default: ""
+
+  # Catalog and schema (for notebook parameters)
+  catalog_name:
+    description: "Unity Catalog name"
+    default: ""
+
+  schema_name:
+    description: "Schema name within catalog"
+    default: ""
+
+  # Service Principal (populated after app creation for permissions)
+  app_service_principal_id:
+    description: "Service principal ID of the deployed app (for permissions)"
+    default: ""
+
+# Sync configuration - what gets deployed to workspace
+sync:
+  include:
+    - "app/**"           # Streamlit app files (includes config.toml copied by deploy.sh)
+    - "notebooks/**"     # Setup and analysis notebooks
+  exclude:
+    - "src/**"           # Telemetry generator (runs on laptop, not in Databricks)
+    - "main.py"          # Main telemetry generator script
+    - "*.pyc"
+    - "__pycache__"
+    - "venv/**"
+    - ".git/**"
+    - ".gitignore"
+    - ".claude"
+    - "tmp_old_scripts/**"
+    - "tmp/**"           # Temporary files and notes (not for deployment)
+    - "scripts/**"       # Scripts are for local deployment, not workspace
+
+# Resources
+resources:
+  # ============================================================================
+  # App: Data Drifter Regatta (Real-time Race Visualization)
+  # ============================================================================
+  apps:
+    data_drifter_regatta:
+      name: data-drifter-regatta-v3
+      description: "Real-time sailboat race visualization with live map tracking, leaderboard, and weather display"
+      source_code_path: ./app
+
+      # App reads configuration from config.toml (synced to workspace)
+      # No environment variables needed
+
+      # App resources
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: dd43ee29fedd958d  # Hardcoded from config.toml
+            permission: CAN_USE
+
+      # App permissions
+      permissions:
+        - level: CAN_MANAGE
+          user_name: ${workspace.current_user.userName}
+
+  # ============================================================================
+  # Jobs
+  # ============================================================================
+  jobs:
+    # ------------------------------------------------------------------------
+    # Job 1: Create Tables (runs Python notebooks to create Delta tables)
+    # ------------------------------------------------------------------------
+    create_tables:
+      name: "[Setup] Create Tables"
+      description: "Create Delta tables for telemetry and weather station data"
+
+      tasks:
+        # Task 1: Create telemetry table (required)
+        - task_key: create_telemetry_table
+          notebook_task:
+            notebook_path: ./notebooks/create_telemetry_table.py
+            source: WORKSPACE
+            base_parameters:
+              telemetry_table: ${var.telemetry_table}
+
+        # Task 2: Create weather station table (depends on telemetry)
+        - task_key: create_weather_table
+          notebook_task:
+            notebook_path: ./notebooks/create_weather_station_table.py
+            source: WORKSPACE
+            base_parameters:
+              weather_table: ${var.weather_table}
+          depends_on:
+            - task_key: create_telemetry_table
+
+      # Job permissions
+      permissions:
+        - level: CAN_MANAGE
+          user_name: ${workspace.current_user.userName}
+
+    # ------------------------------------------------------------------------
+    # Job 2: Grant Permissions (grants table access to app service principal)
+    # ------------------------------------------------------------------------
+    grant_permissions:
+      name: "[Setup] Grant Permissions"
+      description: "Grant Unity Catalog permissions to app service principal"
+
+      tasks:
+        - task_key: grant_all_permissions
+          notebook_task:
+            notebook_path: ./notebooks/grant_permissions.py
+            source: WORKSPACE
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+              schema_name: ${var.schema_name}
+              telemetry_table: ${var.telemetry_table}
+              weather_table: ${var.weather_table}
+              app_service_principal_id: ${var.app_service_principal_id}
+
+      # Job permissions
+      permissions:
+        - level: CAN_MANAGE
+          user_name: ${workspace.current_user.userName}
+
+    # ------------------------------------------------------------------------
+    # Job 3: Sailboat Performance Analysis (existing analysis notebooks)
+    # ------------------------------------------------------------------------
+    sailboat_analysis:
+      name: "Sailboat Performance Analysis"
+      description: "Analyze boat performance, wind conditions, race progress, and generate summary report"
+
+      tasks:
+        # Task 1: Boat Performance Analysis
+        - task_key: boat_performance
+          notebook_task:
+            notebook_path: ./notebooks/01_boat_performance.py
+            source: WORKSPACE
+
+        # Task 2: Wind Conditions Analysis (depends on boat_performance)
+        - task_key: wind_conditions
+          notebook_task:
+            notebook_path: ./notebooks/02_wind_conditions.py
+            source: WORKSPACE
+          depends_on:
+            - task_key: boat_performance
+
+        # Task 3: Race Progress Analysis (depends on boat_performance)
+        - task_key: race_progress
+          notebook_task:
+            notebook_path: ./notebooks/03_race_progress.py
+            source: WORKSPACE
+          depends_on:
+            - task_key: boat_performance
+
+        # Task 4: Race Summary (depends on wind_conditions and race_progress)
+        - task_key: race_summary
+          notebook_task:
+            notebook_path: ./notebooks/04_race_summary.py
+            source: WORKSPACE
+          depends_on:
+            - task_key: wind_conditions
+            - task_key: race_progress
+
+      # Job permissions
+      permissions:
+        - level: CAN_MANAGE
+          user_name: ${workspace.current_user.userName}
+
+# ============================================================================
+# Deployment Targets
+# ============================================================================
+targets:
+  # Development target
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://your-dev-workspace.cloud.databricks.com
+
+  # Production target (if needed in future)
+  # prod:
+  #   mode: production
+  #   workspace:
+  #     host: https://your-prod-workspace.cloud.databricks.com
