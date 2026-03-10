@@ -214,25 +214,14 @@ class RaceSimulator:
         self._print_final_summary()
 
     async def _send_telemetry(self, fleet_telemetry: list):
-        """Send telemetry data to Zerobus with retry logic"""
-        max_retries = 3
+        """Send telemetry data to Zerobus"""
         for telemetry in fleet_telemetry:
-            last_exception = None
-            for attempt in range(max_retries + 1):
-                try:
-                    await self.stream.ingest_record(telemetry)
-                    self.records_sent += 1
-                    break
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries:
-                        backoff = 2 ** attempt  # 1s, 2s, 4s
-                        logger.warning(f"Failed to send record from {telemetry['boat_name']} (attempt {attempt + 1}/{max_retries + 1}), retrying in {backoff}s: {e}")
-                        await asyncio.sleep(backoff)
-                    else:
-                        self.records_failed += 1
-                        logger.error(f"✗ Failed to send record from {telemetry['boat_name']} after {max_retries + 1} attempts: {e}")
-                        raise last_exception
+            try:
+                await self.stream.ingest_record(telemetry)
+                self.records_sent += 1
+            except Exception as e:
+                self.records_failed += 1
+                logger.error(f"✗ Failed to send record from {telemetry['boat_name']}: {e}")
 
     def _all_boats_finished(self) -> bool:
         """Check if all boats have finished the race"""
