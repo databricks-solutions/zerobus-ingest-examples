@@ -215,17 +215,20 @@ display(fig)
 
 # COMMAND ----------
 
-# Save race progress analysis results
-positions.createOrReplaceTempView("race_positions_over_time")
-vmg_by_leg.createOrReplaceTempView("race_leg_vmg")
-leg_trend.createOrReplaceTempView("race_leg_trends")
-consistency.createOrReplaceTempView("race_leg_consistency")
+# Derive schema from TABLE_NAME (catalog.schema.table -> catalog.schema)
+SCHEMA_PREFIX = ".".join(TABLE_NAME.split(".")[:2])
 
-print("Race progress analysis results saved to temp views:")
-print("  - race_positions_over_time (includes race_position and remaining_distance_nm)")
-print("  - race_leg_vmg")
-print("  - race_leg_trends")
-print("  - race_leg_consistency")
+# Save race progress analysis results as tables
+positions.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.race_positions_over_time")
+vmg_by_leg.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.race_leg_vmg")
+leg_trend.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.race_leg_trends")
+consistency.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.race_leg_consistency")
+
+print("Race progress analysis results saved to tables:")
+print(f"  - {SCHEMA_PREFIX}.race_positions_over_time")
+print(f"  - {SCHEMA_PREFIX}.race_leg_vmg")
+print(f"  - {SCHEMA_PREFIX}.race_leg_trends")
+print(f"  - {SCHEMA_PREFIX}.race_leg_consistency")
 
 # COMMAND ----------
 

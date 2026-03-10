@@ -151,13 +151,16 @@ display(fig)
 
 # COMMAND ----------
 
-# Save boat performance summary
-boat_performance.createOrReplaceTempView("boat_performance_summary")
-finished_boats.createOrReplaceTempView("finished_boats_summary")
+# Derive schema from TABLE_NAME (catalog.schema.table -> catalog.schema)
+SCHEMA_PREFIX = ".".join(TABLE_NAME.split(".")[:2])
 
-print("Boat performance results saved to temp views:")
-print("  - boat_performance_summary")
-print("  - finished_boats_summary")
+# Save boat performance summary as tables
+boat_performance.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.boat_performance_summary")
+finished_boats.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.finished_boats_summary")
+
+print("Boat performance results saved to tables:")
+print(f"  - {SCHEMA_PREFIX}.boat_performance_summary")
+print(f"  - {SCHEMA_PREFIX}.finished_boats_summary")
 
 # COMMAND ----------
 

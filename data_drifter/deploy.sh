@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-export DATABRICKS_CONFIG_PROFILE="${DATABRICKS_CONFIG_PROFILE:-default}"
+export DATABRICKS_CONFIG_PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
 TARGET="${DATABRICKS_TARGET:-dev}"
 APP_NAME="data-drifter-regatta-v3"
 
@@ -34,16 +34,18 @@ echo "📦 Deploying bundle..."
 
 databricks bundle deploy \
   --target "$TARGET" \
+  --profile="$DATABRICKS_CONFIG_PROFILE" \
   --var="telemetry_table=$TELEMETRY_TABLE" \
   --var="weather_table=$WEATHER_TABLE" \
   --var="catalog_name=$CATALOG_NAME" \
-  --var="schema_name=$SCHEMA_NAME"
+  --var="schema_name=$SCHEMA_NAME" \
+  --var="sql_warehouse_id=$WAREHOUSE_ID"
 
 echo "✅ Bundle deployed"
 
 # Create tables
 echo "🏗️  Creating tables..."
-if databricks bundle run create_tables --target "$TARGET"; then
+if databricks bundle run create_tables --target "$TARGET" --profile="$DATABRICKS_CONFIG_PROFILE"; then
     echo "✅ Tables created"
 else
     echo "❌ Table creation failed"
@@ -53,15 +55,15 @@ fi
 
 # Deploy app
 echo "📱 Deploying app..."
-CURRENT_USER=$(databricks current-user me --output json 2>/dev/null | jq -r '.userName')
+CURRENT_USER=$(databricks current-user me --profile="$DATABRICKS_CONFIG_PROFILE" --output json 2>/dev/null | jq -r '.userName')
 BUNDLE_NAME="data_drifter_regatta"
 APP_SOURCE_PATH="/Workspace/Users/$CURRENT_USER/.bundle/$BUNDLE_NAME/$TARGET/files/app"
 
-if databricks apps get "$APP_NAME" --output json 2>/dev/null | jq -e '.name' > /dev/null; then
+if databricks apps get "$APP_NAME" --profile="$DATABRICKS_CONFIG_PROFILE" --output json 2>/dev/null | jq -e '.name' > /dev/null; then
     # Wait for any active deployment to complete
     WAIT_COUNT=0
     while [ $WAIT_COUNT -lt 12 ]; do
-        DEPLOYMENT_STATE=$(databricks apps get "$APP_NAME" --output json 2>/dev/null | jq -r '.active_deployment.deployment_state // "NONE"')
+        DEPLOYMENT_STATE=$(databricks apps get "$APP_NAME" --profile="$DATABRICKS_CONFIG_PROFILE" --output json 2>/dev/null | jq -r '.active_deployment.deployment_state // "NONE"')
         if [ "$DEPLOYMENT_STATE" = "NONE" ] || [ "$DEPLOYMENT_STATE" = "null" ]; then
             break
         fi
@@ -70,20 +72,20 @@ if databricks apps get "$APP_NAME" --output json 2>/dev/null | jq -e '.name' > /
         WAIT_COUNT=$((WAIT_COUNT + 1))
     done
 
-    COMPUTE_STATUS=$(databricks apps get "$APP_NAME" --output json 2>/dev/null | jq -r '.compute_status.state')
+    COMPUTE_STATUS=$(databricks apps get "$APP_NAME" --profile="$DATABRICKS_CONFIG_PROFILE" --output json 2>/dev/null | jq -r '.compute_status.state')
 
     if [ "$COMPUTE_STATUS" = "ACTIVE" ] || [ "$COMPUTE_STATUS" = "STARTING" ]; then
         echo "Updating running app..."
-        databricks apps deploy "$APP_NAME" --source-code-path "$APP_SOURCE_PATH"
+        databricks apps deploy "$APP_NAME" --source-code-path "$APP_SOURCE_PATH" --profile="$DATABRICKS_CONFIG_PROFILE"
     else
         echo "Deploying and starting app..."
-        databricks apps deploy "$APP_NAME" --source-code-path "$APP_SOURCE_PATH"
-        databricks apps start "$APP_NAME"
+        databricks apps deploy "$APP_NAME" --source-code-path "$APP_SOURCE_PATH" --profile="$DATABRICKS_CONFIG_PROFILE"
+        databricks apps start "$APP_NAME" --profile="$DATABRICKS_CONFIG_PROFILE"
     fi
 else
     echo "Creating new app..."
-    databricks apps deploy "$APP_NAME" --source-code-path "$APP_SOURCE_PATH"
-    databricks apps start "$APP_NAME"
+    databricks apps deploy "$APP_NAME" --source-code-path "$APP_SOURCE_PATH" --profile="$DATABRICKS_CONFIG_PROFILE"
+    databricks apps start "$APP_NAME" --profile="$DATABRICKS_CONFIG_PROFILE"
 fi
 echo "✅ App deployed"
 
@@ -92,8 +94,8 @@ echo "✅ App deployed"
 echo "🔐 Granting permissions..."
 sleep 2
 
-if APP_SP_ID=$(databricks apps get "$APP_NAME" --output json 2>/dev/null | jq -r '.service_principal_client_id'); then
-    if databricks bundle run grant_permissions --notebook-params="app_service_principal_id=$APP_SP_ID"; then
+if APP_SP_ID=$(databricks apps get "$APP_NAME" --profile="$DATABRICKS_CONFIG_PROFILE" --output json 2>/dev/null | jq -r '.service_principal_client_id'); then
+    if databricks bundle run grant_permissions --notebook-params="app_service_principal_id=$APP_SP_ID" --profile="$DATABRICKS_CONFIG_PROFILE"; then
         echo "✅ Permissions granted"
     else
         echo "⚠️  Permission grant failed"
@@ -107,7 +109,7 @@ fi
 echo ""
 echo "✅ Deployment complete!"
 echo ""
-if APP_URL=$(databricks apps get "$APP_NAME" --output json 2>/dev/null | jq -r '.url'); then
+if APP_URL=$(databricks apps get "$APP_NAME" --profile="$DATABRICKS_CONFIG_PROFILE" --output json 2>/dev/null | jq -r '.url'); then
     echo "App URL: $APP_URL"
 fi
 echo ""

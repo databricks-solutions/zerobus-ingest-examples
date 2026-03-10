@@ -27,6 +27,9 @@ from race_utils import load_race_course_config, load_race_data, get_finished_boa
 # Load race course configuration from config.toml
 TABLE_NAME, marks, config = load_race_course_config()
 
+# Derive schema from TABLE_NAME (catalog.schema.table -> catalog.schema)
+SCHEMA_PREFIX = ".".join(TABLE_NAME.split(".")[:2])
+
 # Load telemetry data using utility function
 df = load_race_data(TABLE_NAME)
 
@@ -69,16 +72,16 @@ print(f"  End time: {race_end}")
 # MAGIC %md
 # MAGIC ## 1. Overall Boat Rankings
 # MAGIC
-# MAGIC Load results from boat_performance_summary temp view created by 01_boat_performance notebook
+# MAGIC Load results from boat_performance_summary table created by 01_boat_performance notebook
 
 # COMMAND ----------
 
-# Try to load from temp view, fallback to calculation if not available
+# Try to load from table, fallback to calculation if not available
 try:
-    boat_performance = spark.table("finished_boats_summary")
-    print("✓ Loaded boat rankings from finished_boats_summary temp view")
+    boat_performance = spark.table(f"{SCHEMA_PREFIX}.finished_boats_summary")
+    print(f"✓ Loaded boat rankings from {SCHEMA_PREFIX}.finished_boats_summary table")
 except:
-    print("⚠️  Temp view not found, calculating boat rankings...")
+    print("⚠️  Table not found, calculating boat rankings...")
     boat_performance = get_finished_boats(df)
 
 print("=" * 80)
@@ -96,21 +99,21 @@ for row in top_boats:
 # MAGIC %md
 # MAGIC ## 2. Performance by Wind Condition
 # MAGIC
-# MAGIC Load results from performance_by_wind temp view created by 02_wind_conditions notebook
+# MAGIC Load results from performance_by_wind table created by 02_wind_conditions notebook
 
 # COMMAND ----------
 
-# Try to load from temp view, fallback to calculation if not available
+# Try to load from table, fallback to calculation if not available
 try:
-    vmg_by_wind = spark.table("performance_by_wind")
-    print("✓ Loaded wind condition performance from performance_by_wind temp view")
+    vmg_by_wind = spark.table(f"{SCHEMA_PREFIX}.performance_by_wind")
+    print(f"✓ Loaded wind condition performance from {SCHEMA_PREFIX}.performance_by_wind table")
 
     wind_winners = vmg_by_wind.withColumn(
         "rank",
         F.row_number().over(Window.partitionBy("wind_category").orderBy(F.desc("avg_vmg")))
     ).filter(F.col("rank") == 1)
 except:
-    print("⚠️  Temp view not found, calculating wind condition performance...")
+    print("⚠️  Table not found, calculating wind condition performance...")
     df_conditions = df.withColumn("wind_category",
         F.when(F.col("wind_speed_knots") < 8, "Light")
          .when(F.col("wind_speed_knots") < 15, "Moderate")
@@ -138,21 +141,21 @@ for row in wind_winners.collect():
 # MAGIC %md
 # MAGIC ## 3. Performance by Point of Sail
 # MAGIC
-# MAGIC Load results from performance_by_point_of_sail temp view created by 02_wind_conditions notebook
+# MAGIC Load results from performance_by_point_of_sail table created by 02_wind_conditions notebook
 
 # COMMAND ----------
 
-# Try to load from temp view, fallback to calculation if not available
+# Try to load from table, fallback to calculation if not available
 try:
-    vmg_by_sail = spark.table("performance_by_point_of_sail")
-    print("✓ Loaded point of sail performance from performance_by_point_of_sail temp view")
+    vmg_by_sail = spark.table(f"{SCHEMA_PREFIX}.performance_by_point_of_sail")
+    print(f"✓ Loaded point of sail performance from {SCHEMA_PREFIX}.performance_by_point_of_sail table")
 
     sail_winners = vmg_by_sail.withColumn(
         "rank",
         F.row_number().over(Window.partitionBy("point_of_sail").orderBy(F.desc("avg_vmg")))
     ).filter(F.col("rank") == 1)
 except:
-    print("⚠️  Temp view not found, calculating point of sail performance...")
+    print("⚠️  Table not found, calculating point of sail performance...")
     from race_utils import add_point_of_sail_column
 
     df_with_sail = add_point_of_sail_column(df)
@@ -178,11 +181,11 @@ for row in sail_winners.orderBy("point_of_sail").collect():
 # MAGIC %md
 # MAGIC ## 3.5. Weather Event Analysis
 # MAGIC
-# MAGIC Load results from performance_by_weather_event temp view created by 02_wind_conditions notebook
+# MAGIC Load results from performance_by_weather_event table created by 02_wind_conditions notebook
 
 # COMMAND ----------
 
-# Try to load from temp view first
+# Try to load from table first
 from race_utils import load_weather_station_data, summarize_weather_events
 
 weather_df = load_weather_station_data(config)
@@ -207,17 +210,17 @@ if weather_df is not None:
             pct = (count / weather_summary['total_events']) * 100
             print(f"  {event_type.replace('_', ' ').title():20s}: {count:3d} events ({pct:5.1f}%)")
 
-    # Try to load from temp view, fallback to calculation if not available
+    # Try to load from table, fallback to calculation if not available
     try:
-        vmg_by_weather = spark.table("performance_by_weather_event")
-        print("\n✓ Loaded weather event performance from performance_by_weather_event temp view")
+        vmg_by_weather = spark.table(f"{SCHEMA_PREFIX}.performance_by_weather_event")
+        print(f"\n✓ Loaded weather event performance from {SCHEMA_PREFIX}.performance_by_weather_event")
 
         weather_winners = vmg_by_weather.withColumn(
             "rank",
             F.row_number().over(Window.partitionBy("weather_event_type").orderBy(F.desc("avg_vmg")))
         ).filter(F.col("rank") == 1)
     except:
-        print("\n⚠️  Temp view not found, calculating weather event performance...")
+        print("\n⚠️  Table not found, calculating weather event performance...")
         from race_utils import join_telemetry_with_weather
 
         df_with_weather = join_telemetry_with_weather(df, weather_df)
@@ -239,15 +242,9 @@ if weather_df is not None:
         print(f"\n{event_name}: {row['boat_name']}")
         print(f"  Average VMG: {row['avg_vmg']:.2f} knots")
 
-    # Calculate fleet average VMG by weather event
-    fleet_vmg_by_weather = df_with_weather.groupBy("weather_event_type").agg(
-        F.avg("vmg_knots").alias("fleet_avg_vmg"),
-        F.count("*").alias("observations")
-    ).filter(F.col("weather_event_type").isNotNull()).orderBy(F.desc("fleet_avg_vmg"))
-
-    # Calculate fleet average VMG by weather event (only if not using temp view)
+    # Calculate fleet average VMG by weather event from the persisted table
     try:
-        fleet_vmg_by_weather = spark.table("performance_by_weather_event").groupBy("weather_event_type").agg(
+        fleet_vmg_by_weather = spark.table(f"{SCHEMA_PREFIX}.performance_by_weather_event").groupBy("weather_event_type").agg(
             F.avg("avg_vmg").alias("fleet_avg_vmg"),
             F.sum("observations").alias("observations")
         ).filter(F.col("weather_event_type").isNotNull()).orderBy(F.desc("fleet_avg_vmg"))
@@ -307,18 +304,18 @@ if weather_df is not None:
 # MAGIC %md
 # MAGIC ## 4. Position Changes Throughout Race
 # MAGIC
-# MAGIC **Note**: Position change analysis requires full race data. Loading from race_positions_over_time temp view if available.
+# MAGIC **Note**: Position change analysis requires full race data. Loading from race_positions_over_time table if available.
 
 # COMMAND ----------
 
-# Try to load from temp view created by 03_race_progress notebook
+# Try to load from table created by 03_race_progress notebook
 try:
     print("✓ Position analysis available - see 03_race_progress notebook for detailed position tracking")
-    print("  Temp views available:")
-    print("    - race_positions_over_time")
-    print("    - race_leg_vmg")
-    print("    - race_leg_trends")
-    print("    - race_leg_consistency")
+    print("  Tables available:")
+    print(f"    - {SCHEMA_PREFIX}.race_positions_over_time")
+    print(f"    - {SCHEMA_PREFIX}.race_leg_vmg")
+    print(f"    - {SCHEMA_PREFIX}.race_leg_trends")
+    print(f"    - {SCHEMA_PREFIX}.race_leg_consistency")
 except:
     print("⚠️  Run 03_race_progress notebook first for detailed position analysis")
 

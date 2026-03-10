@@ -30,6 +30,14 @@ variables:
     description: "Schema name within catalog"
     default: ""
 
+  config_file_path:
+    description: "Path to config.toml in workspace"
+    default: "${workspace.file_path}/app/config.toml"
+
+  sql_warehouse_id:
+    description: "SQL Warehouse ID for app resource permissions"
+    default: ""
+
   # Service Principal (populated after app creation for permissions)
   app_service_principal_id:
     description: "Service principal ID of the deployed app (for permissions)"
@@ -71,7 +79,7 @@ resources:
       resources:
         - name: sql-warehouse
           sql_warehouse:
-            id: dd43ee29fedd958d  # Hardcoded from config.toml
+            id: ${var.sql_warehouse_id}
             permission: CAN_USE
 
       # App permissions
@@ -191,7 +199,7 @@ targets:
     mode: development
     default: true
     workspace:
-      host: https://your-dev-workspace.cloud.databricks.com
+      host: https://fe-vm-vdm-classic-cbnm51.cloud.databricks.com
 
   # Production target (if needed in future)
   # prod:

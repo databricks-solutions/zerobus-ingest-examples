@@ -146,13 +146,16 @@ display(fig)
 
 # COMMAND ----------
 
-# Save wind condition analysis results
-performance_by_wind.createOrReplaceTempView("performance_by_wind")
-top_by_wind.createOrReplaceTempView("top_performers_by_wind")
+# Derive schema from TABLE_NAME (catalog.schema.table -> catalog.schema)
+SCHEMA_PREFIX = ".".join(TABLE_NAME.split(".")[:2])
 
-print("Wind condition analysis results saved to temp views:")
-print("  - performance_by_wind")
-print("  - top_performers_by_wind")
+# Save wind condition analysis results as tables
+performance_by_wind.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.performance_by_wind")
+top_by_wind.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.top_performers_by_wind")
+
+print("Wind condition analysis results saved to tables:")
+print(f"  - {SCHEMA_PREFIX}.performance_by_wind")
+print(f"  - {SCHEMA_PREFIX}.top_performers_by_wind")
 
 # COMMAND ----------
 
@@ -365,18 +368,18 @@ display(fig)
 
 # COMMAND ----------
 
-# Save point of sail analysis results
-performance_by_sail.createOrReplaceTempView("performance_by_point_of_sail")
-top_by_sail.createOrReplaceTempView("top_performers_by_sail")
-boat_specialization.createOrReplaceTempView("boat_specializations")
-combined_analysis.createOrReplaceTempView("performance_wind_and_sail")
-distance_by_sail.createOrReplaceTempView("distance_by_point_of_sail")
-distance_by_sail_boat.createOrReplaceTempView("distance_by_point_of_sail_boat")
+# Save point of sail analysis results as tables
+performance_by_sail.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.performance_by_point_of_sail")
+top_by_sail.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.top_performers_by_sail")
+boat_specialization.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.boat_specializations")
+combined_analysis.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.performance_wind_and_sail")
+distance_by_sail.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.distance_by_point_of_sail")
+distance_by_sail_boat.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.distance_by_point_of_sail_boat")
 
-print("Point of sail analysis results saved to temp views:")
-print("  - performance_by_point_of_sail")
-print("  - top_performers_by_sail")
-print("  - boat_specializations")
+print("Point of sail analysis results saved to tables:")
+print(f"  - {SCHEMA_PREFIX}.performance_by_point_of_sail")
+print(f"  - {SCHEMA_PREFIX}.top_performers_by_sail")
+print(f"  - {SCHEMA_PREFIX}.boat_specializations")
 print("  - performance_wind_and_sail")
 print("  - distance_by_point_of_sail")
 print("  - distance_by_point_of_sail_boat")
@@ -655,7 +658,7 @@ if weather_df is not None:
     display(vmg_changes)
 
     # Save for use in other notebooks
-    vmg_changes.createOrReplaceTempView("performance_change_by_weather_event")
+    vmg_changes.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.performance_change_by_weather_event")
 
 # COMMAND ----------
 
@@ -665,16 +668,16 @@ if weather_df is not None:
 # COMMAND ----------
 
 if weather_df is not None:
-    # Save analysis results
-    weather_df.createOrReplaceTempView("weather_events")
-    performance_by_weather_event.createOrReplaceTempView("performance_by_weather_event")
-    top_by_event.createOrReplaceTempView("top_performers_by_weather_event")
-    adaptability.createOrReplaceTempView("boat_adaptability_to_weather")
+    # Save analysis results as tables
+    weather_df.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.weather_events")
+    performance_by_weather_event.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.performance_by_weather_event")
+    top_by_event.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.top_performers_by_weather_event")
+    adaptability.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.boat_adaptability_to_weather")
 
-    print("Weather event analysis results saved to temp views:")
-    print("  - weather_events")
-    print("  - performance_by_weather_event")
-    print("  - top_performers_by_weather_event")
+    print("Weather event analysis results saved to tables:")
+    print(f"  - {SCHEMA_PREFIX}.weather_events")
+    print(f"  - {SCHEMA_PREFIX}.performance_by_weather_event")
+    print(f"  - {SCHEMA_PREFIX}.top_performers_by_weather_event")
     print("  - boat_adaptability_to_weather")
     print("  - performance_change_by_weather_event")
 
