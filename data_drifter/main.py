@@ -281,7 +281,7 @@ async def main():
                     Real-Time Sailing Competition
 
                 ⛵  Presented by Lakeflow Connect  ⛵
-                  Made possbile with Zeorbus Ingest
+                  Made possible with Zerobus Ingest
 
         ════════════════════════════════════════════════════════════
 """)
