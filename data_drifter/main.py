@@ -27,6 +27,8 @@ from fleet import SailboatFleet
 from weather_station import WeatherStation
 from zerobus.sdk.aio import ZerobusSdk
 from zerobus.sdk.shared import RecordType, StreamConfigurationOptions, TableProperties
+from databricks import sql as dbsql
+from databricks.sdk.core import Config, oauth_service_principal
 
 # Configure logging
 logging.basicConfig(
@@ -45,10 +47,10 @@ def load_config(config_path: str = "config.toml") -> dict:
         return config
     except FileNotFoundError:
         logger.error(f"✗ Configuration file not found: {config_path}")
-        sys.exit(1)
+        raise
     except Exception as e:
         logger.error(f"✗ Failed to load configuration: {e}")
-        sys.exit(1)
+        raise
 
 
 class RaceSimulator:
@@ -86,12 +88,73 @@ class RaceSimulator:
             self.time_acceleration = 1.0
             self.emission_interval_real_time = self.emission_interval_race_time
 
+        # Speed control from control table
+        self.speed_multiplier = 1.0
+        self.last_control_check = 0
+        self.control_check_interval = 5.0  # Check every 5 seconds of real time
+        self.control_table = None
+        self.sql_connection = None
+
         # Statistics tracking
         self.records_sent = 0
         self.records_failed = 0
         self.real_start_time = None
         self.last_stats_time = None
         self.elapsed_race_time = 0.0
+
+    def _init_control_table(self, config, client_id, client_secret):
+        """Initialize SQL connection for reading the speed control table"""
+        try:
+            schema_prefix = ".".join(config["zerobus"]["table_name"].split(".")[:2])
+            self.control_table = f"{schema_prefix}.race_control"
+
+            workspace_url = config["zerobus"]["workspace_url"]
+            server_hostname = workspace_url.replace("https://", "").replace("http://", "")
+            warehouse_id = config["warehouse"]["sql_warehouse_id"]
+
+            def credential_provider():
+                config_obj = Config(
+                    host=workspace_url,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                )
+                return oauth_service_principal(config_obj)
+
+            self.sql_connection = dbsql.connect(
+                server_hostname=server_hostname,
+                http_path=f"/sql/1.0/warehouses/{warehouse_id}",
+                credentials_provider=credential_provider,
+            )
+            logger.info(f"✓ Connected to control table: {self.control_table}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not connect to control table: {e}")
+            logger.warning("  Speed control from app will not be available")
+            self.control_table = None
+
+    def _check_speed_control(self):
+        """Read speed multiplier from control table"""
+        if not self.control_table or not self.sql_connection:
+            return
+
+        current_time = time.time()
+        if current_time - self.last_control_check < self.control_check_interval:
+            return
+
+        self.last_control_check = current_time
+        try:
+            cursor = self.sql_connection.cursor()
+            cursor.execute(f"SELECT speed_multiplier FROM {self.control_table} LIMIT 1")
+            row = cursor.fetchone()
+            cursor.close()
+            if row and row[0] != self.speed_multiplier:
+                old = self.speed_multiplier
+                self.speed_multiplier = float(row[0])
+                if self.speed_multiplier <= 0:
+                    self.speed_multiplier = 1.0
+                logger.info(f"⚡ Speed changed: {old:.1f}x → {self.speed_multiplier:.1f}x")
+        except Exception as e:
+            # Silently ignore - control table might not exist yet
+            pass
 
     async def run(self):
         """Run the race simulation"""
@@ -137,8 +200,12 @@ class RaceSimulator:
                     self._print_stats()
                     self.last_stats_time = current_real_time
 
-                # Sleep for real time interval before next emission
-                await asyncio.sleep(self.emission_interval_real_time)
+                # Check for speed control updates from the app
+                self._check_speed_control()
+
+                # Apply speed multiplier to sleep interval
+                adjusted_interval = self.emission_interval_real_time / self.speed_multiplier
+                await asyncio.sleep(adjusted_interval)
 
         except KeyboardInterrupt:
             logger.info("\n\nInterrupted by user")
@@ -147,16 +214,25 @@ class RaceSimulator:
         self._print_final_summary()
 
     async def _send_telemetry(self, fleet_telemetry: list):
-        """Send telemetry data to Zerobus"""
+        """Send telemetry data to Zerobus with retry logic"""
+        max_retries = 3
         for telemetry in fleet_telemetry:
-            try:
-                await self.stream.ingest_record(telemetry)
-                self.records_sent += 1
-            except Exception as e:
-                self.records_failed += 1
-                logger.error(f"✗ Failed to send record from {telemetry['boat_name']}: {e}")
-                logger.error(e)
-                exit(1)
+            last_exception = None
+            for attempt in range(max_retries + 1):
+                try:
+                    await self.stream.ingest_record(telemetry)
+                    self.records_sent += 1
+                    break
+                except Exception as e:
+                    last_exception = e
+                    if attempt < max_retries:
+                        backoff = 2 ** attempt  # 1s, 2s, 4s
+                        logger.warning(f"Failed to send record from {telemetry['boat_name']} (attempt {attempt + 1}/{max_retries + 1}), retrying in {backoff}s: {e}")
+                        await asyncio.sleep(backoff)
+                    else:
+                        self.records_failed += 1
+                        logger.error(f"✗ Failed to send record from {telemetry['boat_name']} after {max_retries + 1} attempts: {e}")
+                        raise last_exception
 
     def _all_boats_finished(self) -> bool:
         """Check if all boats have finished the race"""
@@ -197,7 +273,8 @@ class RaceSimulator:
         logger.info(f"Records sent: {self.records_sent}")
         logger.info(f"Records failed: {self.records_failed}")
         logger.info(f"Success rate: {(self.records_sent/(self.records_sent+self.records_failed)*100) if (self.records_sent+self.records_failed) > 0 else 0:.1f}%")
-        logger.info(f"Throughput: {rate:.2f} records/sec (real time)")
+        speed_str = f" | Speed: {self.speed_multiplier:.1f}x" if self.speed_multiplier != 1.0 else ""
+        logger.info(f"Throughput: {rate:.2f} records/sec (real time){speed_str}")
         logger.info("-" * 60 + "\n")
 
     def _print_final_summary(self):
@@ -463,6 +540,7 @@ async def main():
 
     # Create and run the race simulator
     simulator = RaceSimulator(fleet, stream, config, weather_station)
+    simulator._init_control_table(config, CLIENT_ID, CLIENT_SECRET)
     await simulator.run()
 
     # Close stream
@@ -472,6 +550,12 @@ async def main():
         logger.info("✓ Stream closed")
     except Exception as e:
         logger.error(f"✗ Error closing stream: {e}")
+
+    if simulator.sql_connection:
+        try:
+            simulator.sql_connection.close()
+        except:
+            pass
 
     return 0
 

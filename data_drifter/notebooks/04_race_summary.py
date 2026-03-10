@@ -22,13 +22,17 @@
 
 import pyspark.sql.functions as F
 from pyspark.sql.window import Window
-from race_utils import load_race_course_config, load_race_data, get_finished_boats
+from race_utils import load_race_course_config, load_race_data, get_finished_boats, get_schema_prefix, categorize_wind
+from pyspark.sql.functions import udf
+from pyspark.sql.types import StringType
+
+categorize_wind_udf = udf(lambda speed: categorize_wind(speed), StringType())
 
 # Load race course configuration from config.toml
 TABLE_NAME, marks, config = load_race_course_config()
 
 # Derive schema from TABLE_NAME (catalog.schema.table -> catalog.schema)
-SCHEMA_PREFIX = ".".join(TABLE_NAME.split(".")[:2])
+SCHEMA_PREFIX = get_schema_prefix(TABLE_NAME)
 
 # Load telemetry data using utility function
 df = load_race_data(TABLE_NAME)
@@ -115,9 +119,7 @@ try:
 except:
     print("⚠️  Table not found, calculating wind condition performance...")
     df_conditions = df.withColumn("wind_category",
-        F.when(F.col("wind_speed_knots") < 8, "Light")
-         .when(F.col("wind_speed_knots") < 15, "Moderate")
-         .otherwise("Heavy")
+        categorize_wind_udf(F.col("wind_speed_knots"))
     )
 
     vmg_by_wind = df_conditions.groupBy("boat_id", "boat_name", "wind_category").agg(

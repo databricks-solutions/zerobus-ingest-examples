@@ -117,6 +117,15 @@ resources:
           depends_on:
             - task_key: create_telemetry_table
 
+        - task_key: create_control_table
+          notebook_task:
+            notebook_path: ./notebooks/create_control_table.py
+            source: WORKSPACE
+            base_parameters:
+              telemetry_table: ${var.telemetry_table}
+          depends_on:
+            - task_key: create_weather_table
+
       # Job permissions
       permissions:
         - level: CAN_MANAGE

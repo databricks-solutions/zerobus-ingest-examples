@@ -21,7 +21,7 @@
 
 import pyspark.sql.functions as F
 from pyspark.sql.window import Window
-from race_utils import load_race_course_config, add_remaining_distance_column, load_race_data
+from race_utils import load_race_course_config, add_remaining_distance_column, load_race_data, get_schema_prefix
 
 # Load race course configuration from config.toml
 TABLE_NAME, marks, config = load_race_course_config()
@@ -162,6 +162,11 @@ for row in leg_trend.collect():
 
 # COMMAND ----------
 
+# Read consistency thresholds from config
+_very_consistent = config.get("analysis", {}).get("consistency_very_consistent", 0.1)
+_consistent = config.get("analysis", {}).get("consistency_consistent", 0.2)
+_variable = config.get("analysis", {}).get("consistency_variable", 0.3)
+
 # Calculate VMG consistency across legs
 consistency = vmg_by_leg.groupBy("boat_id", "boat_name").agg(
     F.avg("avg_vmg").alias("mean_vmg"),
@@ -172,9 +177,9 @@ consistency = vmg_by_leg.groupBy("boat_id", "boat_name").agg(
     F.col("stddev_vmg") / F.abs(F.col("mean_vmg"))
 ).withColumn(
     "consistency_rating",
-    F.when(F.col("coefficient_of_variation") < 0.1, "Very Consistent")
-     .when(F.col("coefficient_of_variation") < 0.2, "Consistent")
-     .when(F.col("coefficient_of_variation") < 0.3, "Moderate")
+    F.when(F.col("coefficient_of_variation") < _very_consistent, "Very Consistent")
+     .when(F.col("coefficient_of_variation") < _consistent, "Consistent")
+     .when(F.col("coefficient_of_variation") < _variable, "Moderate")
      .otherwise("Variable")
 ).orderBy("coefficient_of_variation")
 
@@ -216,7 +221,7 @@ display(fig)
 # COMMAND ----------
 
 # Derive schema from TABLE_NAME (catalog.schema.table -> catalog.schema)
-SCHEMA_PREFIX = ".".join(TABLE_NAME.split(".")[:2])
+SCHEMA_PREFIX = get_schema_prefix(TABLE_NAME)
 
 # Save race progress analysis results as tables
 positions.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.race_positions_over_time")

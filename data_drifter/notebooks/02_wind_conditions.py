@@ -21,7 +21,11 @@
 
 import pyspark.sql.functions as F
 from pyspark.sql.window import Window
-from race_utils import load_race_course_config, load_race_data
+from race_utils import load_race_course_config, load_race_data, get_schema_prefix, categorize_wind
+from pyspark.sql.functions import udf
+from pyspark.sql.types import StringType
+
+categorize_wind_udf = udf(lambda speed: categorize_wind(speed), StringType())
 
 # Load race course configuration from config.toml
 TABLE_NAME, marks, config = load_race_course_config()
@@ -38,9 +42,7 @@ df = load_race_data(TABLE_NAME)
 
 # Categorize wind conditions
 df_with_wind = df.withColumn("wind_category",
-    F.when(F.col("wind_speed_knots") < 8, "Light")
-     .when(F.col("wind_speed_knots") < 15, "Moderate")
-     .otherwise("Heavy")
+    categorize_wind_udf(F.col("wind_speed_knots"))
 )
 
 # Check distribution
@@ -147,7 +149,7 @@ display(fig)
 # COMMAND ----------
 
 # Derive schema from TABLE_NAME (catalog.schema.table -> catalog.schema)
-SCHEMA_PREFIX = ".".join(TABLE_NAME.split(".")[:2])
+SCHEMA_PREFIX = get_schema_prefix(TABLE_NAME)
 
 # Save wind condition analysis results as tables
 performance_by_wind.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.performance_by_wind")
@@ -322,9 +324,7 @@ display(boat_specialization)
 
 # Analyze by both wind condition and point of sail
 combined_analysis = df_with_sail.withColumn("wind_category",
-    F.when(F.col("wind_speed_knots") < 8, "Light")
-     .when(F.col("wind_speed_knots") < 15, "Moderate")
-     .otherwise("Heavy")
+    categorize_wind_udf(F.col("wind_speed_knots"))
 ).groupBy("boat_id", "boat_name", "wind_category", "point_of_sail").agg(
     F.avg("vmg_knots").alias("avg_vmg"),
     F.avg("speed_over_ground_knots").alias("avg_speed"),

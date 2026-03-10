@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Validate prerequisites
+command -v databricks >/dev/null 2>&1 || { echo "❌ databricks CLI not found. Install: https://docs.databricks.com/en/dev-tools/cli/install.html"; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "❌ jq not found. Install: brew install jq"; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "❌ python3 not found"; exit 1; }
+python3 -c "import toml" 2>/dev/null || python3 -c "import tomllib" 2>/dev/null || python3 -c "import tomli" 2>/dev/null || { echo "❌ No TOML parser available. Run: pip install toml (or activate your venv first)"; exit 1; }
+
 export DATABRICKS_CONFIG_PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
 TARGET="${DATABRICKS_TARGET:-dev}"
 APP_NAME="data-drifter-regatta-v3"
@@ -62,7 +68,7 @@ APP_SOURCE_PATH="/Workspace/Users/$CURRENT_USER/.bundle/$BUNDLE_NAME/$TARGET/fil
 if databricks apps get "$APP_NAME" --profile="$DATABRICKS_CONFIG_PROFILE" --output json 2>/dev/null | jq -e '.name' > /dev/null; then
     # Wait for any active deployment to complete
     WAIT_COUNT=0
-    while [ $WAIT_COUNT -lt 12 ]; do
+    while [ $WAIT_COUNT -lt 24 ]; do
         DEPLOYMENT_STATE=$(databricks apps get "$APP_NAME" --profile="$DATABRICKS_CONFIG_PROFILE" --output json 2>/dev/null | jq -r '.active_deployment.deployment_state // "NONE"')
         if [ "$DEPLOYMENT_STATE" = "NONE" ] || [ "$DEPLOYMENT_STATE" = "null" ]; then
             break

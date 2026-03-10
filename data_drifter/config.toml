@@ -130,4 +130,14 @@ stats_interval_seconds = 5.0
 [warehouse]
 # SQL Warehouse ID for app resource permissions
 # The app will be granted CAN_USE permission on this warehouse
-sql_warehouse_id = "<your warehouse id here>" 
+sql_warehouse_id = "<your warehouse id here>"
+
+[analysis]
+# Wind speed category thresholds (knots)
+wind_light_threshold_knots = 8
+wind_moderate_threshold_knots = 15
+
+# Consistency rating thresholds (coefficient of variation)
+consistency_very_consistent = 0.1
+consistency_consistent = 0.2
+consistency_variable = 0.3
