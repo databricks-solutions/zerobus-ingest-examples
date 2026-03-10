@@ -21,7 +21,7 @@
 
 import pyspark.sql.functions as F
 from pyspark.sql.window import Window
-from race_utils import load_race_course_config, add_remaining_distance_column, load_race_data
+from race_utils import load_race_course_config, add_remaining_distance_column, load_race_data, get_schema_prefix
 
 # Load race course configuration from config.toml
 TABLE_NAME, marks, config = load_race_course_config()
@@ -151,13 +151,16 @@ display(fig)
 
 # COMMAND ----------
 
-# Save boat performance summary
-boat_performance.createOrReplaceTempView("boat_performance_summary")
-finished_boats.createOrReplaceTempView("finished_boats_summary")
+# Derive schema from TABLE_NAME (catalog.schema.table -> catalog.schema)
+SCHEMA_PREFIX = get_schema_prefix(TABLE_NAME)
 
-print("Boat performance results saved to temp views:")
-print("  - boat_performance_summary")
-print("  - finished_boats_summary")
+# Save boat performance summary as tables
+boat_performance.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.boat_performance_summary")
+finished_boats.write.mode("overwrite").saveAsTable(f"{SCHEMA_PREFIX}.finished_boats_summary")
+
+print("Boat performance results saved to tables:")
+print(f"  - {SCHEMA_PREFIX}.boat_performance_summary")
+print(f"  - {SCHEMA_PREFIX}.finished_boats_summary")
 
 # COMMAND ----------
 

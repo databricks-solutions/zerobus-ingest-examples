@@ -114,7 +114,7 @@ race_duration_seconds = 172800
 #   600 = watch 4-day race in 10 minutes (576x speed)
 #   1800 = watch 4-day race in 30 minutes (192x speed)
 #   3600 = watch 4-day race in 1 hour (96x speed)
-real_time_duration_seconds = 300
+real_time_duration_seconds = 120
 
 # How often to emit telemetry in RACE TIME (seconds)
 # This is the interval between telemetry records in race time
@@ -130,4 +130,14 @@ stats_interval_seconds = 5.0
 [warehouse]
 # SQL Warehouse ID for app resource permissions
 # The app will be granted CAN_USE permission on this warehouse
-sql_warehouse_id = "<your warehouse id here>" 
+sql_warehouse_id = "<your warehouse id here>"
+
+[analysis]
+# Wind speed category thresholds (knots)
+wind_light_threshold_knots = 8
+wind_moderate_threshold_knots = 15
+
+# Consistency rating thresholds (coefficient of variation)
+consistency_very_consistent = 0.1
+consistency_consistent = 0.2
+consistency_variable = 0.3

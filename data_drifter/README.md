@@ -16,6 +16,11 @@ Simulates a fleet of sailboats racing and visualizes their positions in real-tim
 - Databricks workspace with Apps enabled
 - [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/install.html) installed
 - Unity Catalog access with permission to create tables
+- A Databricks **service principal** with OAuth credentials (client ID + secret) for Zerobus Ingest authentication. To create one:
+  1. Go to **Workspace Settings → Identity and access → Service principals → Add**
+  2. Create a new service principal
+  3. Under the service principal's settings, generate an **OAuth secret**
+  4. Save the **client ID** and **client secret** — you'll need them in Step 5
 
 ### Step 1: Clone and Install Dependencies
 
@@ -34,8 +39,8 @@ pip install -r requirements.txt
 ### Step 2: Configure Databricks CLI
 
 ```bash
-# Configure authentication (if not already done)
-databricks configure --token
+# Configure a named profile (recommended)
+databricks configure --token --profile MY_PROFILE
 
 # You'll be prompted for:
 # - Databricks Host: https://your-workspace.cloud.databricks.com
@@ -66,6 +71,10 @@ sql_warehouse_id = "your-warehouse-id"
 ### Step 4: Deploy Everything with One Command
 
 ```bash
+# Using a named profile (recommended)
+DATABRICKS_CONFIG_PROFILE=MY_PROFILE ./deploy.sh
+
+# Or with the DEFAULT profile
 ./deploy.sh
 ```
 
@@ -88,17 +97,18 @@ sql_warehouse_id = "your-warehouse-id"
    URL: https://your-app-url.cloud.databricks.com
 
 📊 Analysis Job:
-   Run with: databricks bundle run sailboat_analysis
+   Run with: databricks bundle run sailboat_analysis --profile MY_PROFILE
 
 🚀 Next Steps:
    1. Start telemetry generator: python3 main.py --client-id <id> --client-secret <secret>
+      (use the service principal credentials you created in the Prerequisites)
    2. Open app in browser (URL above)
 ```
 
 ### Step 5: Start the Race!
 
 ```bash
-# Generate sailboat telemetry (pass OAuth credentials as CLI arguments)
+# Start the telemetry generator using your service principal credentials
 python3 main.py \
   --client-id your-service-principal-client-id \
   --client-secret your-service-principal-secret
@@ -129,7 +139,7 @@ Open the app URL from deployment output in your browser. You'll see:
 After the race, run the analysis notebooks:
 
 ```bash
-databricks bundle run sailboat_analysis
+databricks bundle run sailboat_analysis --profile MY_PROFILE
 ```
 
 This runs 4 notebooks in sequence:
@@ -138,6 +148,8 @@ This runs 4 notebooks in sequence:
 3. **Race Progress** - Position changes throughout race, mark rounding analysis
 4. **Race Summary** - Executive summary with key insights
 
+Analysis results are persisted as Delta tables in your Unity Catalog schema (e.g. `your_catalog.your_schema.finished_boats_summary`), so they can be queried independently after the job completes.
+
 ---
 
 ## 🏗️ Architecture
@@ -145,9 +157,9 @@ This runs 4 notebooks in sequence:
 ### Data Flow
 
 ```
-Sailboat Fleet (20 boats)          Weather Station (IoT device)
-        ↓ (gRPC/SDK)                        ↓ (REST API)
-        └──────────→  Zerobus Ingest  ←─────────┘
+Sailboat Fleet (configurable, default=6)    Weather Station (IoT device)
+        ↓ (gRPC/SDK)                                ↓ (REST API)
+        └──────────→  Zerobus Ingest  ←──────────────┘
                             ↓
                     Delta Lake Tables
                    (Unity Catalog)
@@ -174,6 +186,13 @@ Sailboat Fleet (20 boats)          Weather Station (IoT device)
 
 ## 🔧 Advanced Usage
 
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABRICKS_CONFIG_PROFILE` | `DEFAULT` | Databricks CLI profile to use |
+| `DATABRICKS_TARGET` | `dev` | Deployment target (dev/prod) |
+
 ### Customize Race Configuration
 
 Edit `config.toml` to change:
@@ -189,7 +208,7 @@ See inline comments in `config.toml` for all options.
 Tables are created automatically by `deploy.sh`, but if needed:
 
 ```bash
-databricks bundle run create_tables
+databricks bundle run create_tables --profile MY_PROFILE
 ```
 
 ### Manual Permissions Grant (Optional)
@@ -198,10 +217,10 @@ Permissions are granted automatically, but if needed:
 
 ```bash
 # Get app service principal ID
-APP_SP_ID=$(databricks apps get data-drifter-regatta --output json | jq -r '.service_principal_client_id')
+APP_SP_ID=$(databricks apps get data-drifter-regatta-v3 --profile MY_PROFILE --output json | jq -r '.service_principal_client_id')
 
 # Grant permissions
-databricks bundle run grant_permissions --var app_service_principal_id=$APP_SP_ID
+databricks bundle run grant_permissions --var app_service_principal_id=$APP_SP_ID --profile MY_PROFILE
 ```
 
 ### View Deployed Resources
@@ -211,10 +230,10 @@ databricks bundle run grant_permissions --var app_service_principal_id=$APP_SP_I
 databricks bundle resources --target dev
 
 # View app details
-databricks apps get data-drifter-regatta
+databricks apps get data-drifter-regatta-v3 --profile MY_PROFILE
 
 # View jobs
-databricks jobs list
+databricks jobs list --profile MY_PROFILE
 ```
 
 ---
@@ -232,19 +251,22 @@ databricks jobs list
 **Problem:** `deploy.sh` fails with "table_name not found"
 - **Solution:** Check `[zerobus]` section in `config.toml` - ensure `table_name` and `weather_station_table_name` are set
 
+**Problem:** `deploy.sh` fails with "no module named toml"
+- **Solution:** Activate the virtual environment first: `source venv/bin/activate && ./deploy.sh`
+
 **Problem:** Permission errors during deployment
 - **Solution:** Ensure you have CREATE TABLE permissions in Unity Catalog
 
 **Problem:** App service principal ID not found
 - **Solution:** Wait a few moments for app to initialize, then re-run:
   ```bash
-  databricks bundle run grant_permissions --var app_service_principal_id=<SP_ID>
+  databricks bundle run grant_permissions --var app_service_principal_id=<SP_ID> --profile MY_PROFILE
   ```
 
 ### Telemetry Generator Issues
 
 **Problem:** Missing required argument: --client-id or --client-secret
-- **Solution:** Pass OAuth credentials as command-line arguments:
+- **Solution:** These are OAuth credentials for a Databricks service principal (see Prerequisites):
   ```bash
   python3 main.py --client-id <your-client-id> --client-secret <your-secret>
   ```

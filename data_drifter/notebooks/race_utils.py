@@ -442,3 +442,28 @@ def get_finished_boats(df):
     ).orderBy("rank")
 
     return finished
+
+
+def get_schema_prefix(table_name):
+    """Extract catalog.schema prefix from a fully-qualified table name (catalog.schema.table)."""
+    return ".".join(table_name.split(".")[:2])
+
+
+def categorize_wind(wind_speed_knots, config=None):
+    """Categorize wind speed into Light/Moderate/Heavy.
+
+    Thresholds come from config.toml [analysis] section if available,
+    otherwise defaults to 8/15 knots.
+    """
+    if config and "analysis" in config:
+        light = config["analysis"].get("wind_light_threshold_knots", 8)
+        moderate = config["analysis"].get("wind_moderate_threshold_knots", 15)
+    else:
+        light = 8
+        moderate = 15
+
+    if wind_speed_knots < light:
+        return "Light"
+    elif wind_speed_knots < moderate:
+        return "Moderate"
+    return "Heavy"
