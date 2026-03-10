@@ -198,8 +198,6 @@ targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: https://fe-vm-vdm-classic-cbnm51.cloud.databricks.com
 
   # Production target (if needed in future)
   # prod:
