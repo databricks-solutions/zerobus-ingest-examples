@@ -35,6 +35,10 @@ variables:
     description: "Service principal ID of the deployed app (for permissions)"
     default: ""
 
+  warehouse_id:
+    description: "SQL warehouse ID"
+    default: ""
+
 # Sync configuration - what gets deployed to workspace
 sync:
   include:
@@ -71,7 +75,7 @@ resources:
       resources:
         - name: sql-warehouse
           sql_warehouse:
-            id: dd43ee29fedd958d  # Hardcoded from config.toml
+            id: ${var.warehouse_id}
             permission: CAN_USE
 
       # App permissions
@@ -190,8 +194,6 @@ targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: https://your-dev-workspace.cloud.databricks.com
 
   # Production target (if needed in future)
   # prod:

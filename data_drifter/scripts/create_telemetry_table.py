@@ -37,6 +37,32 @@ def create_telemetry_table():
         # (DATABRICKS_CONFIG_PROFILE is set by deploy.sh)
         w = WorkspaceClient()
 
+        # Validate and parse catalog/schema/table from full name
+        table_parts = table_name.split(".")
+        if len(table_parts) != 3:
+            print(
+                "❌ table_name must be in format 'catalog.schema.table', "
+                f"got: {table_name}"
+            )
+            return 1
+
+        schema_id = ".".join(table_parts[:2])
+
+        # Ensure schema exists before creating table
+        create_schema_sql = f"CREATE SCHEMA IF NOT EXISTS {schema_id}"
+        print(f"🗂️ Ensuring schema exists: {schema_id}")
+        schema_result = w.statement_execution.execute_statement(
+            warehouse_id=warehouse_id,
+            statement=create_schema_sql,
+            wait_timeout="30s"
+        )
+
+        if schema_result.status.state.value != "SUCCEEDED":
+            print(f"❌ Schema creation failed with state: {schema_result.status.state.value}")
+            if schema_result.status.error:
+                print(f"   Error: {schema_result.status.error.message}")
+            return 1
+
         # SQL to create table
         create_table_sql = f"""
 CREATE TABLE IF NOT EXISTS {table_name} (

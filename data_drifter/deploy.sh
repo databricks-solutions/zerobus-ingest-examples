@@ -37,7 +37,8 @@ databricks bundle deploy \
   --var="telemetry_table=$TELEMETRY_TABLE" \
   --var="weather_table=$WEATHER_TABLE" \
   --var="catalog_name=$CATALOG_NAME" \
-  --var="schema_name=$SCHEMA_NAME"
+  --var="schema_name=$SCHEMA_NAME" \
+  --var="warehouse_id=$WAREHOUSE_ID"
 
 echo "✅ Bundle deployed"
 

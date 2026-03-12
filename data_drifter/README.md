@@ -97,6 +97,20 @@ sql_warehouse_id = "your-warehouse-id"
 
 ### Step 5: Start the Race!
 
+**Obtain OAuth credentials (service principal)**
+
+Create a Databricks service principal and capture its OAuth client ID and secret.  
+Reference: [Create a service principal and grant permissions](https://docs.databricks.com/aws/en/ingestion/zerobus-ingest#create-a-service-principal-and-grant-permissions)
+
+1. Open **Settings → Admin Console → Service principals**.
+2. Click **Add service principal**, then open the new principal.
+3. Copy the **Application ID** and use it as `--client-id`.
+4. Under **OAuth secrets**, click **Generate secret** and copy the value for `--client-secret`.
+   - Databricks shows the secret only once—store it securely.
+5. Confirm the service principal can access the UC tables (the deployment script grants this automatically).
+
+Then run:
+
 ```bash
 # Generate sailboat telemetry (pass OAuth credentials as CLI arguments)
 python3 main.py \

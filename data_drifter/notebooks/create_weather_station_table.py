@@ -17,6 +17,19 @@ print(f"Creating weather station table: {weather_table}")
 
 # COMMAND ----------
 
+# Ensure schema exists
+table_parts = weather_table.split(".")
+if len(table_parts) != 3:
+    raise ValueError(
+        f"weather_table must be in format 'catalog.schema.table', got: {weather_table}"
+    )
+
+schema_id = ".".join(table_parts[:2])
+print(f"Ensuring schema exists: {schema_id}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_id}")
+
+# COMMAND ----------
+
 # Create the weather station table
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {weather_table} (
