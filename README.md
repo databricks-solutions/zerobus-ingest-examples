@@ -6,8 +6,18 @@ In this repo, you will find examples and demos of Zerobus Ingest, a push-based A
 
 * Learn more [here](https://docs.databricks.com/aws/en/ingestion/zerobus-overview)
 
+## Repository Structure
+
+| Folder | Description |
+|--------|-------------|
+| [`demos/`](./demos/) | Fully encapsulated, end-to-end examples that showcase Zerobus Ingest in action. Each demo highlights a particular pattern or industry use case and includes everything needed to deploy and run independently. |
+| [`example_clients/`](./example_clients/) | Reusable reference implementations of Zerobus Ingest clients. Each example client demonstrates how to connect a specific protocol or data source to Zerobus, providing a foundation users can take and build upon. |
+
 ## Demos
-* [Data Drifter Regatta ⛵](./data_drifter)
+* [Data Drifter Regatta](./demos/data_drifter/) - Real-time sailboat race tracking with marine telemetry (SDK/gRPC + REST API)
+
+## Example Clients
+*Coming soon* - MQTT, Salesforce, OPC-UA, and more.
 
 
 ## How to get help
