@@ -42,10 +42,16 @@ example_clients/<client_name>/
 
 If your contribution is a **complete, narrative-driven showcase** with data generation, ingestion, visualization, and analysis (e.g., a marine telemetry race simulation), it belongs in [`demos/`](../demos/) instead. Example clients are composable building blocks; demos are end-to-end stories.
 
+## Clients in this repo
+
+| Client | Protocol / Source | Language | Description |
+|--------|-------------------|----------|-------------|
+| `salesforce_zerobus` | Salesforce Pub/Sub API | Python, Go | Subscribes to Salesforce Change Data Capture events and forwards to Zerobus |
+| `github_zerobus_sdp_ocsf` | GitHub Events API | Spark - Python, SQL | Zerobus + SDP integration and Cyber Lakehouse OCSF Medallion Architecture |
+
 ## Planned Clients
 
 | Client | Protocol / Source | Language | Description |
 |--------|-------------------|----------|-------------|
-| `salesforce_zerobus` | Salesforce Pub/Sub API | Python, GO | Subscribes to Salesforce Change Data Capture events and forwards to Zerobus |
 | `mqtt_client` | MQTT | TBD | Bridges MQTT broker messages to Zerobus Ingest |
 | `opcua_client` | OPC-UA | TBD | Connects to OPC-UA servers (industrial IoT) and streams telemetry to Zerobus |
