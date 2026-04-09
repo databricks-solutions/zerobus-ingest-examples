@@ -48,6 +48,7 @@ If your contribution is a **complete, narrative-driven showcase** with data gene
 |--------|-------------------|----------|-------------|
 | `salesforce_zerobus` | Salesforce Pub/Sub API | Python, Go | Subscribes to Salesforce Change Data Capture events and forwards to Zerobus |
 | `github_zerobus_sdp_ocsf` | GitHub Events API | Spark - Python, SQL | Zerobus + SDP integration and Cyber Lakehouse OCSF Medallion Architecture |
+| `syslog-ng-zerobus` | syslog (Unix socket / OTLP) | Python, syslog-ng config | Forwards syslog-ng log streams to a Delta table via OTLP/gRPC with automatic OAuth2 token management |
 
 ## Planned Clients
 
