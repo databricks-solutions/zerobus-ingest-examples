@@ -46,13 +46,13 @@ If your contribution is a **complete, narrative-driven showcase** with data gene
 
 | Client | Protocol / Source | Language | Description |
 |--------|-------------------|----------|-------------|
-| `salesforce_zerobus` | Salesforce Pub/Sub API | Python, Go | Subscribes to Salesforce Change Data Capture events and forwards to Zerobus |
-| `github_zerobus_sdp_ocsf` | GitHub Events API | Spark - Python, SQL | Zerobus + SDP integration and Cyber Lakehouse OCSF Medallion Architecture |
-| `syslog-ng-zerobus` | syslog (Unix socket / OTLP) | Python, syslog-ng config | Forwards syslog-ng log streams to a Delta table via OTLP/gRPC with automatic OAuth2 token management |
+| [`salesforce_zerobus`](salesforce_zerobus/) | Salesforce Pub/Sub API | Python, Go | Subscribes to Salesforce Change Data Capture events and forwards to Zerobus |
+| [`github_zerobus_sdp_ocsf`](github_zerobus_sdp_ocsf/) | GitHub Events API | Spark - Python, SQL | Zerobus + SDP integration and Cyber Lakehouse OCSF Medallion Architecture |
+| [`syslog-ng-zerobus`](syslog-ng-zerobus/) | syslog (Unix socket / OTLP) | Python, syslog-ng config | Forwards syslog-ng log streams to a Delta table via OTLP/gRPC with automatic OAuth2 token management |
+| [`opcua_zerobus`](opcua_zerobus/) | OPC UA | Python | Streams OPC UA telemetry to Zerobus with simple (direct) and advanced (RabbitMQ-buffered) architectures |
 
 ## Planned Clients
 
 | Client | Protocol / Source | Language | Description |
 |--------|-------------------|----------|-------------|
 | `mqtt_client` | MQTT | TBD | Bridges MQTT broker messages to Zerobus Ingest |
-| `opcua_client` | OPC-UA | TBD | Connects to OPC-UA servers (industrial IoT) and streams telemetry to Zerobus |
