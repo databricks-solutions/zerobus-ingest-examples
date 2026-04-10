@@ -20,8 +20,10 @@ In this repo, you will find examples and demos of Zerobus Ingest, a push-based A
 ## Example Clients
 * [Salesforce Zerobus](./example_clients/salesforce_zerobus/) - Stream Salesforce CDC events to Delta tables via the Pub/Sub API (Python & Go)
 * [GitHub Zerobus SDP OCSF](./example_clients/github_zerobus_sdp_ocsf/) - Push GitHub public events via Zerobus + SDP integration following Cyber Lakehouse OCSF Medallion Architecture blueprint
-* [syslog-ng Zerobus](./example_clients/syslog-ng-zerobus/) - Forward syslog-ng log streams to a Delta table via OTLP/gRPC with automatic OAuth2 token management.
-*Coming soon* - MQTT, OPC-UA, and more.
+* [syslog-ng Zerobus](./example_clients/syslog-ng-zerobus/) - Forward syslog-ng log streams to a Delta table via OTLP/gRPC with automatic OAuth2 token management
+* [OPC UA Zerobus](./example_clients/opcua_zerobus/) - Stream OPC UA telemetry to Delta tables with simple (direct) and advanced (RabbitMQ-buffered) architectures
+
+*Coming soon* - MQTT and more.
 
 
 ## How to get help
