@@ -1,0 +1,26 @@
+opcua:
+  namespace: 2
+  device_path: Channel1.Device1
+
+lines:
+  LineA:
+    tags:
+      - name: Temperature
+        type: float
+      - name: Humidity
+        type: float
+      - name: Pressure
+        type: float
+      - name: Status
+        type: string
+      - name: Running
+        type: bool
+
+  LineB:
+    tags:
+      - name: Temperature
+        type: float
+      - name: Humidity
+        type: float
+      - name: Status
+        type: string

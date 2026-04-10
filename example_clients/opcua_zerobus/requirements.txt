@@ -1,0 +1,4 @@
+asyncua>=1.1.0
+databricks-zerobus-ingest-sdk>=1.1.0
+python-dotenv>=1.0.0
+pyyaml>=6.0.0

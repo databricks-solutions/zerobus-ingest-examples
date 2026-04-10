@@ -1,0 +1,57 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    hostname: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  opcua-client:
+    build: .
+    command: python opcua_client.py
+    init: true
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      OPCUA_URL: opc.tcp://host.docker.internal:4840/freeopcua/server/
+      TAGS_CONFIG_FILE: /app/config/tags_config.yaml
+      BACKUP_PATH: /app/data/backup_opcua.jsonl
+    volumes:
+      - ../tags_config.yaml:/app/config/tags_config.yaml:ro
+      - ./certs:/app/certs:ro
+      - opcua_backup:/app/data
+
+  forwarding-agent:
+    build: .
+    command: python forwarding_agent.py
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+
+volumes:
+  rabbitmq_data:
+  opcua_backup:
