@@ -1,0 +1,57 @@
+## Tag Normalization Configuration (Unified Connector)
+# This file was moved from iot_connector/ so unified_connector can be standalone.
+#
+# Operating mode: "raw" or "normalized"
+mode: raw  # Default to raw for backward compatibility
+version: "1.0"
+
+path_building:
+  # Default template for all protocols
+  # Available variables: {site_id}, {line_id}, {equipment_id}, {signal_type}
+  default_template: "{site_id}/{line_id}/{equipment_id}/{signal_type}"
+
+  # Protocol-specific templates (override default)
+  opcua_template: "{site_id}/{line_id}/{equipment_id}/{signal_type}"
+  modbus_template: "{site_id}/{line_id}/{equipment_id}/{signal_type}"
+  mqtt_template: "{site_id}/{line_id}/{equipment_id}/{signal_type}"
+
+  # Extraction patterns (regex) for parsing source identifiers
+  opcua_patterns:
+    line_id: "(?i)line[_\\s]*([0-9]+)"
+    equipment_id: "(?i)(machine|press|pump|tank|conveyor)[_\\s]*([0-9]+)"
+
+  modbus_patterns:
+    register_type: "^([0-9]+)"
+
+  mqtt_patterns:
+    site_id: "^([^/]+)"
+
+quality:
+  mqtt_age_threshold: 300  # seconds
+  opcua_good_max: 0x3FFFFFFF
+  opcua_uncertain_max: 0x7FFFFFFF
+
+output:
+  normalized_table: "main.iot_bronze.normalized_tags"
+  raw_table: "main.iot_bronze.raw_protocol_data"
+  write_both: false
+  batch_size: 100
+  flush_interval_seconds: 5
+
+protocols:
+  opcua:
+    extract_engineering_units: true
+    prefer_source_timestamp: true
+  modbus:
+    default_data_type: "int16"
+    default_byte_order: "big"
+    default_word_order: "big"
+  mqtt:
+    attempt_json_parse: true
+    extract_payload_timestamp: true
+
+features:
+  normalization_enabled: false
+  include_protocol_metadata: true
+  use_hash_tag_ids: true
+

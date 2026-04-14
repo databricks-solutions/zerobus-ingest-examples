@@ -1,0 +1,29 @@
+# Unified OT Zerobus Connector Client Dependencies
+
+# Core async framework
+asyncio-mqtt>=0.16.0
+aiohttp>=3.9.0
+aiohttp-cors>=0.7.0
+
+# Protocol clients
+asyncua>=1.1.0
+pymodbus>=3.5.0
+paho-mqtt>=1.6.0
+
+# Data processing
+pyyaml>=6.0
+python-dateutil>=2.8.0
+
+# Security & encryption
+cryptography>=41.0.0
+
+# ZeroBus SDK for Databricks streaming
+# Note: Install from Databricks package repository
+# databricks-zerobus-sdk>=0.1.0
+
+# Monitoring
+prometheus-client>=0.18.0
+
+# Optional: Advanced features
+# numpy>=1.24.0  # For numerical processing
+# pandas>=2.0.0  # For data manipulation
