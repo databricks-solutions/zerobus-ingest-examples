@@ -576,9 +576,9 @@
     },
     {
       "name": "ds-h1",
-      "displayName": "Requests Last Hour",
+      "displayName": "Commits Last Hour",
       "queryLines": [
-        "SELECT COUNT(*) AS requests_last_hour\n",
+        "SELECT COUNT(*) AS commits_last_hour\n",
         "FROM system.lakeflow.zerobus_ingest\n",
         "WHERE commit_time >= NOW() - INTERVAL 1 HOUR\n",
         "  AND (:p_table = 'All' OR table_name = :p_table)\n"
@@ -1821,8 +1821,8 @@
                   "datasetName": "ds-h1",
                   "fields": [
                     {
-                      "name": "requests_last_hour",
-                      "expression": "`requests_last_hour`"
+                      "name": "commits_last_hour",
+                      "expression": "`commits_last_hour`"
                     }
                   ],
                   "disaggregated": true
@@ -1834,12 +1834,12 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "requests_last_hour"
+                  "fieldName": "commits_last_hour"
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Requests (Last Hour)"
+                "title": "Commits in the Last Hour"
               }
             }
           },
