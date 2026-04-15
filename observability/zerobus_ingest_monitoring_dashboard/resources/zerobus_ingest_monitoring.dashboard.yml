@@ -1,0 +1,6 @@
+resources:
+  dashboards:
+    zerobus_ingest_monitoring:
+      display_name: "Zerobus Ingest Monitoring"
+      file_path: ../dashboards/zerobus_ingest_monitoring.lvdash.json
+      warehouse_id: ${var.warehouse_id}
