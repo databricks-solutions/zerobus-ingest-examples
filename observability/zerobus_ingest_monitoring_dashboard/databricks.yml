@@ -1,0 +1,16 @@
+bundle:
+  name: zerobus_ingest_monitoring_dashboard
+
+include:
+  - resources/*.yml
+
+variables:
+  warehouse_id:
+    description: "Name of the SQL warehouse used to power the Zerobus Ingest Monitoring dashboard."
+    lookup:
+      warehouse: "Shared Unity Catalog Serverless"
+
+targets:
+  dev:
+    default: true
+    mode: development

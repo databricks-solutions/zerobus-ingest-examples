@@ -1,0 +1,2106 @@
+{
+  "datasets": [
+    {
+      "name": "ds-p01",
+      "displayName": "Active Streams",
+      "queryLines": [
+        "SELECT COUNT(o.stream_id) AS active_streams\n",
+        "FROM system.lakeflow.zerobus_stream o\n",
+        "LEFT JOIN system.lakeflow.zerobus_stream c\n",
+        "  ON o.stream_id = c.stream_id AND c.closed_time IS NOT NULL\n",
+        "WHERE o.opened_time IS NOT NULL\n",
+        "  AND c.stream_id IS NULL\n",
+        "  AND (:p_table = 'All' OR o.table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p04",
+      "displayName": "Streams With Errors 7d",
+      "queryLines": [
+        "SELECT COUNT(DISTINCT stream_id) AS error_streams\n",
+        "FROM system.lakeflow.zerobus_stream\n",
+        "WHERE errors IS NOT NULL\n",
+        "  AND SIZE(errors) > 0\n",
+        "  AND event_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p05",
+      "displayName": "Unique Active Tables 7d",
+      "queryLines": [
+        "SELECT COUNT(DISTINCT table_name) AS active_tables\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p06",
+      "displayName": "Records Per Hour 7d",
+      "queryLines": [
+        "SELECT DATE_TRUNC('hour', commit_time) AS hour,\n",
+        "       SUM(committed_records) AS records_ingested\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "GROUP BY 1\n",
+        "ORDER BY 1\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p07",
+      "displayName": "Bytes Per Hour 7d",
+      "queryLines": [
+        "SELECT DATE_TRUNC('hour', commit_time) AS hour,\n",
+        "       SUM(committed_bytes) AS bytes_ingested\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "GROUP BY 1\n",
+        "ORDER BY 1\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p08",
+      "displayName": "Throughput By Table 24h",
+      "queryLines": [
+        "SELECT table_name,\n",
+        "       DATE_TRUNC('hour', commit_time) AS hour,\n",
+        "       ROUND(SUM(committed_bytes) / 3600.0, 2) AS bytes_per_second,\n",
+        "       ROUND(SUM(committed_records) / 3600.0, 2) AS records_per_second\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 24 HOURS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "GROUP BY 1, 2\n",
+        "ORDER BY 2 ASC, 3 DESC\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p09",
+      "displayName": "Streams Opened vs Closed 7d",
+      "queryLines": [
+        "SELECT hour, SUM(streams_opened) AS streams_opened, SUM(streams_closed) AS streams_closed\n",
+        "FROM (\n",
+        "  SELECT DATE_TRUNC('hour', opened_time) AS hour,\n",
+        "         COUNT(*) AS streams_opened, 0 AS streams_closed\n",
+        "  FROM system.lakeflow.zerobus_stream\n",
+        "  WHERE opened_time IS NOT NULL AND opened_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "  GROUP BY 1\n",
+        "  UNION ALL\n",
+        "  SELECT DATE_TRUNC('hour', closed_time) AS hour,\n",
+        "         0 AS streams_opened, COUNT(*) AS streams_closed\n",
+        "  FROM system.lakeflow.zerobus_stream\n",
+        "  WHERE closed_time IS NOT NULL AND closed_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "  GROUP BY 1\n",
+        ")\n",
+        "GROUP BY 1 ORDER BY 1\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p10",
+      "displayName": "Top Tables by Records 7d",
+      "queryLines": [
+        "SELECT table_name,\n",
+        "       SUM(committed_records) AS total_records\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "GROUP BY 1\n",
+        "ORDER BY total_records DESC\n",
+        "LIMIT 10\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p11",
+      "displayName": "Top Tables by Bytes 7d",
+      "queryLines": [
+        "SELECT table_name,\n",
+        "       SUM(committed_bytes) AS total_bytes\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "GROUP BY 1\n",
+        "ORDER BY total_bytes DESC\n",
+        "LIMIT 10\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p13",
+      "displayName": "Error Rate Over Time 7d",
+      "queryLines": [
+        "SELECT DATE_TRUNC('hour', event_time) AS hour,\n",
+        "       COUNT(*) AS total_events,\n",
+        "       COUNT(CASE WHEN SIZE(errors) > 0 THEN 1 END) AS error_events,\n",
+        "       ROUND(COUNT(CASE WHEN SIZE(errors) > 0 THEN 1 END) * 100.0 / COUNT(*), 2) AS error_rate_pct\n",
+        "FROM system.lakeflow.zerobus_stream\n",
+        "WHERE event_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "GROUP BY 1\n",
+        "ORDER BY 1\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p14",
+      "displayName": "Error Code Breakdown 7d",
+      "queryLines": [
+        "SELECT e.error_code AS error_code,\n",
+        "       COUNT(*) AS occurrence_count\n",
+        "FROM system.lakeflow.zerobus_stream\n",
+        "LATERAL VIEW EXPLODE(errors) t AS e\n",
+        "WHERE SIZE(errors) > 0\n",
+        "  AND event_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "GROUP BY 1\n",
+        "ORDER BY 2 DESC\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p15",
+      "displayName": "Error Detail Table",
+      "queryLines": [
+        "SELECT s.stream_id,\n",
+        "       s.table_name,\n",
+        "       s.event_time,\n",
+        "       e.error_code,\n",
+        "       e.error_message,\n",
+        "       e.timestamp AS error_timestamp\n",
+        "FROM system.lakeflow.zerobus_stream s\n",
+        "LATERAL VIEW EXPLODE(s.errors) t AS e\n",
+        "WHERE SIZE(s.errors) > 0\n",
+        "  AND (:p_table = 'All' OR s.table_name = :p_table)\n",
+        "ORDER BY s.event_time DESC LIMIT 200\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p16",
+      "displayName": "Ingest Batch Errors Over Time 7d",
+      "queryLines": [
+        "SELECT DATE_TRUNC('hour', commit_time) AS hour,\n",
+        "       COUNT(CASE WHEN SIZE(errors) > 0 THEN 1 END) AS batches_with_errors,\n",
+        "       COUNT(*) AS total_batches\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "GROUP BY 1\n",
+        "ORDER BY 1\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p17",
+      "displayName": "Protocol Distribution 7d",
+      "queryLines": [
+        "SELECT protocol,\n",
+        "       COUNT(DISTINCT stream_id) AS stream_count\n",
+        "FROM system.lakeflow.zerobus_stream\n",
+        "WHERE opened_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "GROUP BY 1\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p18",
+      "displayName": "Data Format Distribution 7d",
+      "queryLines": [
+        "SELECT data_format,\n",
+        "       COUNT(DISTINCT stream_id) AS stream_count\n",
+        "FROM system.lakeflow.zerobus_stream\n",
+        "WHERE opened_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n",
+        "GROUP BY 1\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-p19",
+      "displayName": "Stream Duration Distribution 7d",
+      "queryLines": [
+        "SELECT\n",
+        "  CASE\n",
+        "    WHEN duration_seconds < 60    THEN '< 1 min'\n",
+        "    WHEN duration_seconds < 300   THEN '1-5 min'\n",
+        "    WHEN duration_seconds < 900   THEN '5-15 min'\n",
+        "    WHEN duration_seconds < 3600  THEN '15-60 min'\n",
+        "    WHEN duration_seconds < 14400 THEN '1-4 hr'\n",
+        "    ELSE '4+ hr'\n",
+        "  END AS duration_bucket,\n",
+        "  COUNT(*) AS stream_count,\n",
+        "  CASE\n",
+        "    WHEN duration_seconds < 60    THEN 1\n",
+        "    WHEN duration_seconds < 300   THEN 2\n",
+        "    WHEN duration_seconds < 900   THEN 3\n",
+        "    WHEN duration_seconds < 3600  THEN 4\n",
+        "    WHEN duration_seconds < 14400 THEN 5\n",
+        "    ELSE 6\n",
+        "  END AS sort_order\n",
+        "FROM (\n",
+        "  SELECT\n",
+        "    UNIX_TIMESTAMP(c.closed_time) - UNIX_TIMESTAMP(o.opened_time) AS duration_seconds\n",
+        "  FROM system.lakeflow.zerobus_stream o\n",
+        "  JOIN system.lakeflow.zerobus_stream c\n",
+        "    ON o.stream_id = c.stream_id AND c.closed_time IS NOT NULL\n",
+        "  WHERE o.opened_time IS NOT NULL\n",
+        "    AND o.opened_time >= NOW() - INTERVAL 7 DAYS\n",
+        "    AND (:p_table = 'All' OR o.table_name = :p_table)\n",
+        ")\n",
+        "GROUP BY duration_bucket, sort_order\n",
+        "ORDER BY sort_order\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-w1",
+      "displayName": "Total Records 7d",
+      "queryLines": [
+        "SELECT SUM(committed_records) AS total_records_7d\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-w2",
+      "displayName": "Total GB 7d",
+      "queryLines": [
+        "SELECT ROUND(SUM(committed_bytes) / 1024.0 / 1024.0 / 1024.0, 2) AS total_gb_7d\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 7 DAYS\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-h1",
+      "displayName": "Requests Last Hour",
+      "queryLines": [
+        "SELECT COUNT(*) AS requests_last_hour\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 1 HOUR\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-h2",
+      "displayName": "Streams Last Hour",
+      "queryLines": [
+        "SELECT COUNT(DISTINCT stream_id) AS streams_last_hour\n",
+        "FROM system.lakeflow.zerobus_stream\n",
+        "WHERE event_time >= NOW() - INTERVAL 1 HOUR\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-h3",
+      "displayName": "Active Tables Last Hour",
+      "queryLines": [
+        "SELECT COUNT(DISTINCT table_name) AS active_tables_last_hour\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 1 HOUR\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-h4",
+      "displayName": "GB Ingested Last Hour",
+      "queryLines": [
+        "SELECT ROUND(SUM(committed_bytes) / 1024.0 / 1024.0 / 1024.0, 3) AS gb_ingested_last_hour\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 1 HOUR\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-h5",
+      "displayName": "Records Last Hour",
+      "queryLines": [
+        "SELECT SUM(committed_records) AS records_last_hour\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 1 HOUR\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-h6",
+      "displayName": "Error Streams Last Hour",
+      "queryLines": [
+        "SELECT COUNT(DISTINCT stream_id) AS error_streams_last_hour\n",
+        "FROM system.lakeflow.zerobus_stream\n",
+        "WHERE errors IS NOT NULL\n",
+        "  AND SIZE(errors) > 0\n",
+        "  AND event_time >= NOW() - INTERVAL 1 HOUR\n",
+        "  AND (:p_table = 'All' OR table_name = :p_table)\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds-filter-table",
+      "displayName": "Filter: Tables",
+      "queryLines": [
+        "SELECT DISTINCT table_name AS full_table_name\n",
+        "FROM system.lakeflow.zerobus_ingest\n",
+        "WHERE commit_time >= NOW() - INTERVAL 30 DAYS\n",
+        "ORDER BY 1\n"
+      ],
+      "parameters": [
+        {
+          "displayName": "Table",
+          "keyword": "p_table",
+          "dataType": "STRING",
+          "defaultSelection": {
+            "values": {
+              "dataType": "STRING",
+              "values": [
+                {
+                  "value": "All"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "page-main",
+      "displayName": "Zerobus Ingest Monitoring",
+      "layout": [
+        {
+          "widget": {
+            "name": "heading-section1",
+            "multilineTextboxSpec": {
+              "lines": [
+                "<span style=\"font-size:16px\">**Weekly Overview**</span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p01",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p01",
+                  "fields": [
+                    {
+                      "name": "active_streams",
+                      "expression": "`active_streams`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "active_streams"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Active Streams"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p04",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p04",
+                  "fields": [
+                    {
+                      "name": "error_streams",
+                      "expression": "`error_streams`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "error_streams"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Streams With Errors (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p05",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p05",
+                  "fields": [
+                    {
+                      "name": "active_tables",
+                      "expression": "`active_tables`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "active_tables"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Unique Active Tables (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "heading-section2",
+            "multilineTextboxSpec": {
+              "lines": [
+                "<span style=\"font-size:16px\">**Throughput Trends**</span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p06",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p06",
+                  "fields": [
+                    {
+                      "name": "hour",
+                      "expression": "`hour`"
+                    },
+                    {
+                      "name": "records_ingested",
+                      "expression": "`records_ingested`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Hour"
+                },
+                "y": {
+                  "fieldName": "records_ingested",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Records Ingested"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Records Ingested Per Hour (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p07",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p07",
+                  "fields": [
+                    {
+                      "name": "hour",
+                      "expression": "`hour`"
+                    },
+                    {
+                      "name": "bytes_ingested",
+                      "expression": "`bytes_ingested`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Hour"
+                },
+                "y": {
+                  "fieldName": "bytes_ingested",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Bytes Ingested"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Bytes Ingested Per Hour (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 8,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p08",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p08",
+                  "fields": [
+                    {
+                      "name": "table_name",
+                      "expression": "`table_name`"
+                    },
+                    {
+                      "name": "hour",
+                      "expression": "`hour`"
+                    },
+                    {
+                      "name": "bytes_per_second",
+                      "expression": "`bytes_per_second`"
+                    },
+                    {
+                      "name": "records_per_second",
+                      "expression": "`records_per_second`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Hour"
+                },
+                "y": {
+                  "fieldName": "bytes_per_second",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Bytes/sec"
+                },
+                "color": {
+                  "fieldName": "table_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Throughput by Table (24h)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p09",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p09",
+                  "fields": [
+                    {
+                      "name": "hour",
+                      "expression": "`hour`"
+                    },
+                    {
+                      "name": "streams_opened",
+                      "expression": "`streams_opened`"
+                    },
+                    {
+                      "name": "streams_closed",
+                      "expression": "`streams_closed`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Hour"
+                },
+                "y": [
+                  {
+                    "fieldName": "streams_opened",
+                    "scale": {
+                      "type": "quantitative"
+                    },
+                    "displayName": "Streams Opened"
+                  },
+                  {
+                    "fieldName": "streams_closed",
+                    "scale": {
+                      "type": "quantitative"
+                    },
+                    "displayName": "Streams Closed"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Streams Opened vs Closed Per Hour (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 12,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "heading-section3",
+            "multilineTextboxSpec": {
+              "lines": [
+                "<span style=\"font-size:16px\">**Top Tables**</span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p10",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p10",
+                  "fields": [
+                    {
+                      "name": "table_name",
+                      "expression": "`table_name`"
+                    },
+                    {
+                      "name": "total_records",
+                      "expression": "`total_records`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "total_records",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total Records"
+                },
+                "y": {
+                  "fieldName": "table_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Table",
+                  "sort": "-x"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 Tables by Records (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p11",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p11",
+                  "fields": [
+                    {
+                      "name": "table_name",
+                      "expression": "`table_name`"
+                    },
+                    {
+                      "name": "total_bytes",
+                      "expression": "`total_bytes`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "total_bytes",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total Bytes"
+                },
+                "y": {
+                  "fieldName": "table_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Table",
+                  "sort": "-x"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 Tables by Bytes (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 17,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "heading-section4",
+            "multilineTextboxSpec": {
+              "lines": [
+                "<span style=\"font-size:16px\">**Error Analysis**</span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 21,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p13",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p13",
+                  "fields": [
+                    {
+                      "name": "hour",
+                      "expression": "`hour`"
+                    },
+                    {
+                      "name": "total_events",
+                      "expression": "`total_events`"
+                    },
+                    {
+                      "name": "error_events",
+                      "expression": "`error_events`"
+                    },
+                    {
+                      "name": "error_rate_pct",
+                      "expression": "`error_rate_pct`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Hour"
+                },
+                "y": {
+                  "fieldName": "error_rate_pct",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Error Rate (%)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Stream Error Rate Over Time (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 22,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p14",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p14",
+                  "fields": [
+                    {
+                      "name": "error_code",
+                      "expression": "`error_code`"
+                    },
+                    {
+                      "name": "occurrence_count",
+                      "expression": "`occurrence_count`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "occurrence_count",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Count"
+                },
+                "y": {
+                  "fieldName": "error_code",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Error Code"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Error Code Breakdown (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 22,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p15",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p15",
+                  "fields": [
+                    {
+                      "name": "table_name",
+                      "expression": "`table_name`"
+                    },
+                    {
+                      "name": "error_code",
+                      "expression": "`error_code`"
+                    },
+                    {
+                      "name": "error_timestamp",
+                      "expression": "`error_timestamp`"
+                    },
+                    {
+                      "name": "error_message",
+                      "expression": "`error_message`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Error Detail Log (Latest 200)"
+              },
+              "rowsPerPage": 25,
+              "displayRowNumbers": false,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "table_name"
+                  },
+                  {
+                    "fieldName": "error_code"
+                  },
+                  {
+                    "fieldName": "error_timestamp"
+                  },
+                  {
+                    "fieldName": "error_message"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 26,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p16",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p16",
+                  "fields": [
+                    {
+                      "name": "hour",
+                      "expression": "`hour`"
+                    },
+                    {
+                      "name": "batches_with_errors",
+                      "expression": "`batches_with_errors`"
+                    },
+                    {
+                      "name": "total_batches",
+                      "expression": "`total_batches`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hour",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Hour"
+                },
+                "y": {
+                  "fieldName": "batches_with_errors",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Batches With Errors"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Ingest Batch Errors Over Time (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 31,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "heading-section5",
+            "multilineTextboxSpec": {
+              "lines": [
+                "<span style=\"font-size:16px\">**Stream and Protocol Health**</span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 35,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p17",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p17",
+                  "fields": [
+                    {
+                      "name": "protocol",
+                      "expression": "`protocol`"
+                    },
+                    {
+                      "name": "stream_count",
+                      "expression": "`stream_count`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "stream_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "protocol",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Protocol Distribution (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 36,
+            "width": 2,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p18",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p18",
+                  "fields": [
+                    {
+                      "name": "data_format",
+                      "expression": "`data_format`"
+                    },
+                    {
+                      "name": "stream_count",
+                      "expression": "`stream_count`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "stream_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "data_format",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Data Format Distribution (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 36,
+            "width": 2,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-p19",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-p19",
+                  "fields": [
+                    {
+                      "name": "duration_bucket",
+                      "expression": "`duration_bucket`"
+                    },
+                    {
+                      "name": "stream_count",
+                      "expression": "`stream_count`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "stream_count",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Stream Count"
+                },
+                "y": {
+                  "fieldName": "duration_bucket",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Duration"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Stream Duration Distribution (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 36,
+            "width": 2,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-w1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-w1",
+                  "fields": [
+                    {
+                      "name": "total_records_7d",
+                      "expression": "`total_records_7d`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_records_7d"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Records (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-w2",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-w2",
+                  "fields": [
+                    {
+                      "name": "total_gb_7d",
+                      "expression": "`total_gb_7d`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_gb_7d"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total GB Ingested (7d)"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "heading-lasthour",
+            "multilineTextboxSpec": {
+              "lines": [
+                "<span style=\"font-size:16px\">**Last Hour**</span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-h1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-h1",
+                  "fields": [
+                    {
+                      "name": "requests_last_hour",
+                      "expression": "`requests_last_hour`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "requests_last_hour"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Requests (Last Hour)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-h2",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-h2",
+                  "fields": [
+                    {
+                      "name": "streams_last_hour",
+                      "expression": "`streams_last_hour`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "streams_last_hour"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Streams (Last Hour)"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 5,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-h3",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-h3",
+                  "fields": [
+                    {
+                      "name": "active_tables_last_hour",
+                      "expression": "`active_tables_last_hour`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "active_tables_last_hour"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Active Tables (Last Hour)"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 5,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-h4",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-h4",
+                  "fields": [
+                    {
+                      "name": "gb_ingested_last_hour",
+                      "expression": "`gb_ingested_last_hour`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "gb_ingested_last_hour"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "GB Ingested (Last Hour)"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 5,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-h5",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-h5",
+                  "fields": [
+                    {
+                      "name": "records_last_hour",
+                      "expression": "`records_last_hour`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "records_last_hour"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Records (Last Hour)"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 5,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "widget-h6",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds-h6",
+                  "fields": [
+                    {
+                      "name": "error_streams_last_hour",
+                      "expression": "`error_streams_last_hour`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "error_streams_last_hour"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Error Streams (Last Hour)"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 5,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter-table",
+            "queries": [
+              {
+                "name": "fq-p_table",
+                "query": {
+                  "datasetName": "ds-filter-table",
+                  "fields": [
+                    {
+                      "name": "full_table_name",
+                      "expression": "`full_table_name`"
+                    }
+                  ],
+                  "parameters": [
+                    {
+                      "name": "p_table",
+                      "keyword": "p_table"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "parameterName": "p_table",
+                    "queryName": "fq-p_table"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Filter by Table Name"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 1
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
