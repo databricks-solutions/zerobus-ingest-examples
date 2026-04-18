@@ -1,5 +1,6 @@
-# Example configuration: every <...> token must be replaced (workspace URL, Zerobus ingest host, credentials).
-# Unresolved placeholders will fail at runtime — see README and opcua_zerobus/.env.example for the same naming.
+# Example configuration: replace every <...> token before running. Never commit real OAuth client IDs or secrets.
+# Zerobus: set workspace/endpoint above; for auth use credential_manager (README) — values stay out of this file — or
+# replace the two auth lines with ${env:DATABRICKS_CLIENT_ID:} / ${env:DATABRICKS_CLIENT_SECRET:} like opcua_zerobus/.env.example.
 connector:
   name: Unified OT Zerobus Connector Client
   log_level: INFO
@@ -17,14 +18,14 @@ web_ui:
     require_mfa: false
     oauth:
       provider: databricks
-      client_id: ''
-      client_secret: ''
+      client_id: '<web-ui-oauth-client-id>'
+      client_secret: '<web-ui-oauth-client-secret>'
       workspace_host: https://<workspace>.cloud.databricks.com
       redirect_uri: http://localhost:8082/login/callback
       scopes:
       - all-apis
     session:
-      secret_key: ''
+      secret_key: '<web-ui-session-secret-replace-with-long-random-string>'
       max_age_seconds: 28800
       cookie_name: unified_connector_session
       secure: false
@@ -184,6 +185,7 @@ zerobus:
     schema: scada_data
     table: opcua_events_bronze
   auth:
+    # Indirection only — no client id/secret literals in git. Populate via credential_manager or switch to ${env:DATABRICKS_CLIENT_ID:} etc.
     client_id: ${credential:zerobus.client_id}
     client_secret: ${credential:zerobus.client_secret}
   batch:
