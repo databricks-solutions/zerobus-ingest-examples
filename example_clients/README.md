@@ -50,6 +50,7 @@ If your contribution is a **complete, narrative-driven showcase** with data gene
 | [`github_zerobus_sdp_ocsf`](github_zerobus_sdp_ocsf/) | GitHub Events API | Spark - Python, SQL | Zerobus + SDP integration and Cyber Lakehouse OCSF Medallion Architecture |
 | [`syslog-ng-zerobus`](syslog-ng-zerobus/) | syslog (Unix socket / OTLP) | Python, syslog-ng config | Forwards syslog-ng log streams to a Delta table via OTLP/gRPC with automatic OAuth2 token management |
 | [`opcua_zerobus`](opcua_zerobus/) | OPC UA | Python | Streams OPC UA telemetry to Zerobus with simple (direct) and advanced (RabbitMQ-buffered) architectures |
+| [`unified_ot_zerobus`](unified_ot_zerobus/) | OPC UA, MQTT, Modbus | Python | Multi-protocol OT/IoT bridge with normalization, backpressure, and optional Web UI; forwards to Zerobus ([upstream](https://github.com/pravinva/unified-ot-zerobus-connector)) |
 
 ## Planned Clients
 

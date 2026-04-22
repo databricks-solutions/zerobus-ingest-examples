@@ -1,0 +1,242 @@
+# Example configuration: replace every <...> token before running. Never commit real OAuth client IDs or secrets.
+# Zerobus: set workspace/endpoint above; for auth use credential_manager (README) — values stay out of this file — or
+# replace the two auth lines with ${env:DATABRICKS_CLIENT_ID:} / ${env:DATABRICKS_CLIENT_SECRET:} like opcua_zerobus/.env.example.
+connector:
+  name: Unified OT Zerobus Connector Client
+  log_level: INFO
+  log_file: /tmp/unified_connector.log
+bridge:
+  autostart: true
+web_ui:
+  enabled: true
+  host: 0.0.0.0
+  port: 8001
+  auto_open_browser: false
+  authentication:
+    enabled: false
+    method: client_cert
+    require_mfa: false
+    oauth:
+      provider: databricks
+      client_id: '<web-ui-oauth-client-id>'
+      client_secret: '<web-ui-oauth-client-secret>'
+      workspace_host: https://<workspace>.cloud.databricks.com
+      redirect_uri: http://localhost:8082/login/callback
+      scopes:
+      - all-apis
+    session:
+      secret_key: '<web-ui-session-secret-replace-with-long-random-string>'
+      max_age_seconds: 28800
+      cookie_name: unified_connector_session
+      secure: false
+      httponly: true
+      samesite: lax
+    rbac:
+      enabled: true
+      roles:
+        admin:
+          permissions:
+          - read
+          - write
+          - configure
+          - manage_users
+          - start_stop
+          - delete
+        operator:
+          permissions:
+          - read
+          - write
+          - start_stop
+        viewer:
+          permissions:
+          - read
+      role_mappings:
+        OT-Admins: admin
+        OT-Operators: operator
+        OT-Viewers: viewer
+      default_role: viewer
+    client_cert:
+      role_mappings:
+        admin: admin
+        operator: operator
+        viewer: viewer
+        client-admin: admin
+        client-operator: operator
+        client-viewer: viewer
+      default_role: viewer
+  tls:
+    enabled: false
+    common_name: localhost
+    san_list:
+    - localhost
+    - 127.0.0.1
+    - ::1
+    cert_file: ~/.unified_connector/certs/server-cert.pem
+    key_file: ~/.unified_connector/certs/server-key.pem
+    ca_cert_file: ~/.unified_connector/certs/ca-cert.pem
+    hsts:
+      max_age: 31536000
+      include_subdomains: true
+      preload: false
+    require_client_cert: true
+discovery:
+  enabled: true
+  network:
+    scan_enabled: true
+    scan_interval_sec: 300
+    subnets:
+    - 127.0.0.1/32
+    - 192.168.20.0/24
+  opcua:
+    enabled: true
+    default_port: 4840
+    vendor_ports:
+    - 4841
+    - 49320
+    - 4897
+    timeout_sec: 5.0
+  mqtt:
+    enabled: true
+    default_port: 1883
+    default_tls_port: 8883
+    timeout_sec: 3.0
+  modbus:
+    enabled: true
+    default_tcp_port: 502
+    alt_tcp_port: 5020
+    timeout_sec: 2.0
+sources:
+- name: ot-simulator-opcua
+  protocol: opcua
+  endpoint: opc.tcp://127.0.0.1:4841/ot-simulator/server/
+  enabled: true
+  security_mode: None
+  normalization_enabled: true
+  subscription_mode: false
+  polling_interval_ms: 5000
+  variable_limit: 300
+  publishing_interval_ms: 1000
+  numeric_compression:
+    mode: sdt
+    change_only: true
+    sdt_deviation: 0.15
+    sdt_max_interval_ms: 300000
+- name: modbus-127-0-0-1-5020
+  protocol: modbus
+  endpoint: modbus://127.0.0.1:5020
+  enabled: false
+  normalization_enabled: true
+- name: mqtt-127-0-0-1-1883
+  protocol: mqtt
+  endpoint: mqtt://127.0.0.1:1883
+  enabled: false
+  normalization_enabled: true
+  subscription_mode: true
+- name: opcua_127_0_0_1_4841
+  protocol: opcua
+  endpoint: opc.tcp://127.0.0.1:4841/ot-simulator/server/
+  enabled: true
+  site: ''
+  area: ''
+  line: ''
+  equipment: ''
+normalization:
+  enabled: true
+  path_template: '{site}/{area}/{line}/{equipment}/{signal_type}/{tag_name}'
+  default_context:
+    site: plant1
+    area: production
+    line: line1
+    equipment: default
+  quality_mapping:
+    opcua:
+      good:
+      - 0
+      uncertain:
+      - 64
+      - 65
+      - 66
+      bad:
+      - 128
+      - 129
+      - 130
+    mqtt:
+      good:
+      - online
+      - connected
+      bad:
+      - offline
+      - disconnected
+    modbus:
+      good:
+      - 0
+      bad:
+      - 1
+      - 2
+      - 3
+      - 4
+zerobus:
+  enabled: true
+  workspace_host: https://<workspace>.cloud.databricks.com
+  zerobus_endpoint: <workspace-id>.zerobus.<region>.cloud.databricks.com
+  default_target:
+    workspace_host: https://<workspace>.cloud.databricks.com
+    catalog: opcua
+    schema: scada_data
+    table: opcua_events_bronze
+  auth:
+    # Indirection only — no client id/secret literals in git. Populate via credential_manager or switch to ${env:DATABRICKS_CLIENT_ID:} etc.
+    client_id: ${credential:zerobus.client_id}
+    client_secret: ${credential:zerobus.client_secret}
+  batch:
+    max_records: 1000
+    timeout_seconds: 5.0
+  source_targets: {}
+  proxy:
+    enabled: false
+    use_env_vars: true
+    http_proxy: ''
+    https_proxy: ''
+    no_proxy: localhost,127.0.0.1
+numeric_compression:
+  mode: sdt
+  change_only: true
+  deadband: 0.0
+  sdt_deviation: 0.25
+  sdt_max_interval_ms: 600000
+  sdt_min_interval_ms: 0
+  rules:
+  - tag_path_regex: .*temperature.*
+    mode: sdt
+    sdt_deviation: 0.2
+    sdt_max_interval_ms: 300000
+  - tag_path_regex: .*status.*
+    mode: change_only
+backpressure:
+  max_queue_size: 50000
+  drop_policy: oldest
+  disk_spool:
+    enabled: true
+    directory: ./spool
+    max_size_mb: 500
+    compression: gzip
+credentials:
+  storage:
+    type: encrypted
+    file: ~/.unified_connector/credentials.enc
+monitoring:
+  health_check:
+    enabled: true
+    port: 8081
+  prometheus:
+    enabled: true
+    port: 9090
+    path: /metrics
+  stats:
+    enabled: true
+    update_interval_seconds: 10
+performance:
+  max_concurrent_connections: 100
+  connection_pool_size: 20
+  read_buffer_size: 8192
+  write_buffer_size: 8192
