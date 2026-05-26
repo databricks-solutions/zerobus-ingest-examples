@@ -1,0 +1,45 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#0a0e17",
+    "mainBkg": "#111827",
+    "nodeBorder": "#1f2937",
+    "clusterBkg": "#0d1520",
+    "clusterBorder": "#3b82f6",
+    "titleColor": "#d1d5db",
+    "edgeLabelBackground": "#0a0e17",
+    "nodeTextColor": "#d1d5db",
+    "lineColor": "#374151",
+    "primaryColor": "#111827",
+    "primaryTextColor": "#d1d5db",
+    "primaryBorderColor": "#1f2937",
+    "fontFamily": "ui-monospace, SFMono-Regular, Menlo, monospace",
+    "fontSize": "13px"
+  }
+}}%%
+flowchart LR
+    classDef appBox fill:#111827,stroke:#3b82f6,stroke-width:2px,color:#d1d5db
+    classDef rawBox fill:#111827,stroke:#1f2937,stroke-width:1px,color:#9ca3af
+    classDef bronzeBox fill:#1c1409,stroke:#f59e0b,stroke-width:2px,color:#f59e0b
+    classDef silverBox fill:#130d1f,stroke:#8b5cf6,stroke-width:2px,color:#8b5cf6
+    classDef goldBox fill:#131008,stroke:#eab308,stroke-width:2px,color:#eab308
+    classDef dashBox fill:#062016,stroke:#10b981,stroke-width:2px,color:#10b981
+    classDef govBox fill:#0a0e17,stroke:#1f2937,stroke-width:1px,color:#9ca3af
+
+    APP["🏭 Databricks App\nReact + FastAPI\n3 IoT Machines"]:::appBox
+
+    APP -- "ZeroBus SDK\nNo Kafka" --> RAW
+
+    subgraph UC ["🛡 Unity Catalog — Governed"]
+        RAW["📥 Landing\nraw_sensor_events"]:::rawBox
+        BRONZE["🟠 Bronze\nValidated"]:::bronzeBox
+        SILVER["🟣 Silver\nML Anomaly Scored"]:::silverBox
+        GOLD["🟡 Gold\nHealth KPIs"]:::goldBox
+        RAW --> BRONZE --> SILVER --> GOLD
+    end
+
+    GOLD -- "SQL" --> DASH["📊 In-App Dashboard\nHealth · Anomalies · KPIs"]:::dashBox
+
+    DASH -- "WebSocket" --> APP
+
+    style UC fill:#0d1520,stroke:#3b82f6,stroke-width:2px,color:#d1d5db
