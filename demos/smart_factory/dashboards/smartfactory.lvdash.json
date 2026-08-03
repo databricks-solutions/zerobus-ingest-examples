@@ -1,0 +1,145 @@
+{
+  "pages": [
+    {
+      "name": "machine-health-overview",
+      "displayName": "Machine Health Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "machine_health_scores",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "machine_summary",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "bar",
+              "encodings": {
+                "x": { "fieldName": "machine_id", "displayName": "Machine" },
+                "y": { "fieldName": "avg_health_score", "displayName": "Health Score" },
+                "color": { "fieldName": "machine_type", "displayName": "Type" }
+              }
+            }
+          },
+          "position": { "x": 0, "y": 0, "width": 3, "height": 2 }
+        },
+        {
+          "widget": {
+            "name": "anomaly_counts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "machine_summary",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "bar",
+              "encodings": {
+                "x": { "fieldName": "machine_id", "displayName": "Machine" },
+                "y": { "fieldName": "total_criticals", "displayName": "Critical Alerts" },
+                "color": { "fieldName": "machine_id", "displayName": "Machine" }
+              }
+            }
+          },
+          "position": { "x": 3, "y": 0, "width": 3, "height": 2 }
+        }
+      ]
+    },
+    {
+      "name": "sensor-trends",
+      "displayName": "Sensor Trends",
+      "layout": [
+        {
+          "widget": {
+            "name": "sensor_timeseries",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "enriched_events",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "line",
+              "encodings": {
+                "x": { "fieldName": "timestamp", "displayName": "Time" },
+                "y": { "fieldName": "value", "displayName": "Sensor Value" },
+                "color": { "fieldName": "sensor_name", "displayName": "Sensor" }
+              }
+            }
+          },
+          "position": { "x": 0, "y": 0, "width": 6, "height": 3 }
+        }
+      ]
+    },
+    {
+      "name": "anomaly-log",
+      "displayName": "Anomaly Log",
+      "layout": [
+        {
+          "widget": {
+            "name": "anomaly_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "anomaly_timeline",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  { "fieldName": "timestamp", "displayName": "Time" },
+                  { "fieldName": "machine_id", "displayName": "Machine" },
+                  { "fieldName": "sensor_name", "displayName": "Sensor" },
+                  { "fieldName": "value", "displayName": "Value" },
+                  { "fieldName": "anomaly_status", "displayName": "Status" },
+                  { "fieldName": "critical_threshold", "displayName": "Threshold" }
+                ]
+              }
+            }
+          },
+          "position": { "x": 0, "y": 0, "width": 6, "height": 4 }
+        }
+      ]
+    }
+  ],
+  "datasets": [
+    {
+      "name": "machine_summary",
+      "displayName": "Machine Summary",
+      "query": "SELECT * FROM dilan_catalog.smartfactory.gold.machine_summary"
+    },
+    {
+      "name": "enriched_events",
+      "displayName": "Enriched Events",
+      "query": "SELECT * FROM dilan_catalog.smartfactory.silver.enriched_events WHERE timestamp > current_timestamp() - INTERVAL 1 HOUR ORDER BY timestamp DESC LIMIT 5000"
+    },
+    {
+      "name": "anomaly_timeline",
+      "displayName": "Anomaly Timeline",
+      "query": "SELECT * FROM dilan_catalog.smartfactory.gold.anomaly_timeline LIMIT 500"
+    },
+    {
+      "name": "health_kpis",
+      "displayName": "Health KPIs",
+      "query": "SELECT * FROM dilan_catalog.smartfactory.gold.machine_health_kpis"
+    }
+  ]
+}

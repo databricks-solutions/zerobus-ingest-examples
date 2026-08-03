@@ -1,0 +1,53 @@
+bundle:
+  name: smartfactory-demo
+
+variables:
+  warehouse_id:
+    description: "SQL Warehouse ID for dashboard queries"
+  catalog_name:
+    description: "Unity Catalog name"
+    default: dilan_catalog
+
+resources:
+  schemas:
+    smartfactory_schema:
+      name: smartfactory
+      catalog_name: ${var.catalog_name}
+      comment: "SmartFactory IoT demo — all pipeline tables"
+
+  pipelines:
+    smartfactory_sdp:
+      name: "smartfactory-sdp-pipeline"
+      catalog: ${var.catalog_name}
+      target: smartfactory
+      serverless: true
+      libraries:
+        - file:
+            path: pipeline/bronze.sql
+        - file:
+            path: pipeline/silver.sql
+        - file:
+            path: pipeline/gold.sql
+      channel: PREVIEW
+      continuous: true
+
+  apps:
+    smartfactory_app:
+      name: "smartfactory-app"
+      description: "SmartFactory IoT demo — ZeroBus + SDP streaming with anomaly detection"
+      source_code_path: .
+
+  dashboards:
+    smartfactory_dashboard:
+      display_name: "SmartFactory Health Dashboard"
+      file_path: dashboards/smartfactory.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      profile: fevm-classic-stable-w6wiaf
+    variables:
+      warehouse_id: "01c7fe04f060528e"
