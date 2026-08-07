@@ -26,43 +26,6 @@ A customer-facing demo showing how Databricks turns factory sensor data into act
 | **Hydraulic Press** | Pressure, Temperature, Cycle Count | Pressure surge, cycle slowdown |
 | **Conveyor Belt** | Belt Speed, Load Weight, Motor Current | Speed drop, overcurrent |
 
-## Demo Story (6 minutes)
-
-> **Pre-flight**: Start streaming + pipeline 30s before presenting. Confirm dashboard has data.
-
-### Act 1 — "This is your factory" (IoT Simulation tab)
-> "3 machines, IoT sensors streaming every 2 seconds, directly into Databricks. No Kafka."
-
-- Gauges are already updating, event feed scrolling
-- Point out "Streaming" and "Pipeline Running" in the header
-- Expand ZeroBus info panel — highlight ≤200ms ack, 10 GB/s, Joby Aviation quote
-
-### Act 2 — "Here's the pipeline" (SDP in Databricks UI)
-> "Declarative SQL. Streaming and batch in one pipeline. Fully serverless."
-
-- Switch to Databricks workspace, open the SDP pipeline DAG
-- Show Bronze → Silver → Gold with streaming indicators
-- Click into Silver SQL — "anomaly detection is a SQL JOIN. Any SQL developer can own this."
-- Three SDP benefits: declarative, streaming+batch unified, serverless
-
-### Act 3 — "Let's break something" (Inject a fault)
-> "Watch what happens when the CNC Mill starts overheating."
-
-- Click **Fault: CNC Mill** — watch temperature climb, gauges go red
-- Event feed lights up with warnings and criticals
-- Switch to **Operations Dashboard** — health scores dropping, anomaly log filling
-
-### Act 4 — "Everything is governed" (Unity Catalog)
-> "Every table governed. Full lineage from raw sensor event to dashboard."
-
-- Open Catalog Explorer, click Gold table → show lineage graph
-- "One command to deploy. No Kafka. No ML infrastructure. Just push and go."
-
-### Act 5 — "Clear the fault" (Resolution)
-- Click **Clear All** — readings normalize, health scores recover
-
-See [docs/demo-script.md](docs/demo-script.md) for the full script with talking points and objection handling.
-
 ## Quick Start
 
 ### Prerequisites
@@ -103,7 +66,7 @@ This script handles everything:
 cd frontend && npm run build && cd ..
 databricks bundle deploy -t dev
 databricks apps deploy smartfactory-app \
-  --source-code-path /Workspace/Users/<you>/.bundle/smartfactory-demo/dev/files
+  --source-code-path /Workspace/Users/<workspace-user>/.bundle/smartfactory-demo/dev/files
 ```
 
 ## Project Structure

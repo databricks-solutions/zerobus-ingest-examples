@@ -28,7 +28,7 @@ class ZeroBusClient:
 
     def __init__(self, table_name: str | None = None):
         self.table_name = table_name or os.getenv(
-            "ZEROBUS_TABLE", "dilan_catalog.smartfactory.raw_sensor_events"
+            "ZEROBUS_TABLE", "main.smartfactory.raw_sensor_events"
         )
         self.w = WorkspaceClient()
         self._use_fallback = not ZEROBUS_SDK_AVAILABLE

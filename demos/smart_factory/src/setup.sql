@@ -1,7 +1,7 @@
--- One-time setup for dilan_catalog workspace
+-- Example one-time setup; replace the catalog name for your workspace.
 -- Schemas already created; this creates the landing table for ZeroBus
 
-CREATE TABLE IF NOT EXISTS dilan_catalog.smartfactory_landing.raw_sensor_events (
+CREATE TABLE IF NOT EXISTS main.smartfactory_landing.raw_sensor_events (
   machine_id STRING NOT NULL,
   machine_type STRING NOT NULL,
   sensor_name STRING NOT NULL,

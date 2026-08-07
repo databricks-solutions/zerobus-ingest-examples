@@ -2,7 +2,7 @@
 set -e
 
 # SmartFactory Demo — One-time setup script
-# Usage: ./setup.sh <databricks-cli-profile> [catalog_name]
+# Usage: ./setup.sh <databricks-cli-profile> <catalog_name>
 #
 # Prerequisites:
 #   - Databricks CLI v0.288+ installed (/opt/homebrew/bin/databricks)
@@ -10,8 +10,8 @@ set -e
 #   - Node.js + npm installed (for frontend build)
 
 CLI="/opt/homebrew/bin/databricks"
-PROFILE="${1:?Usage: ./setup.sh <cli-profile> [catalog_name]}"
-CATALOG="${2:-dilan_catalog}"
+PROFILE="${1:?Usage: ./setup.sh <cli-profile> <catalog_name>}"
+CATALOG="${2:?Usage: ./setup.sh <cli-profile> <catalog_name>}"
 SCHEMA="smartfactory"
 PIPELINE_NAME="smartfactory-sdp"
 
@@ -66,8 +66,10 @@ cd ..
 echo "[4/8] Configuring bundle..."
 
 # Detect current user for dev schema prefix
-USERNAME=$($CLI -p "$PROFILE" current-user me --output json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); u=d.get('userName','').split('@')[0].replace('.','_'); print(u)")
-DEV_SCHEMA="dev_${USERNAME}_${SCHEMA}"
+WORKSPACE_USER=$($CLI -p "$PROFILE" current-user me --output json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('userName',''))")
+SCHEMA_USER=$(printf '%s' "$WORKSPACE_USER" | tr '@.-' '___')
+DEV_SCHEMA="dev_${SCHEMA_USER}_${SCHEMA}"
+BUNDLE_SOURCE_PATH="/Workspace/Users/${WORKSPACE_USER}/.bundle/smartfactory-demo/dev/files"
 
 echo "  Dev schema will be: ${CATALOG}.${DEV_SCHEMA}"
 
@@ -78,7 +80,7 @@ CATALOG=$CATALOG
 SCHEMA=$SCHEMA
 WAREHOUSE_ID=$WAREHOUSE_ID
 DEV_SCHEMA=$DEV_SCHEMA
-USERNAME=$USERNAME
+WORKSPACE_USER=$WORKSPACE_USER
 EOF
 
 # --- Step 5: Deploy bundle ---
@@ -126,7 +128,7 @@ echo "  Waiting for app compute..."
 sleep 30
 
 $CLI -p "$PROFILE" apps deploy smartfactory-app \
-    --source-code-path "/Workspace/Users/${USERNAME}@databricks.com/.bundle/smartfactory-demo/dev/files" 2>&1 | tail -1
+    --source-code-path "$BUNDLE_SOURCE_PATH" 2>&1 | tail -1
 
 # --- Step 8: Find pipeline ID, grant SP permissions, set continuous ---
 echo "[8/8] Configuring pipeline..."
@@ -195,4 +197,4 @@ echo ""
 echo "To redeploy after code changes:"
 echo "  cd frontend && npm run build && cd .."
 echo "  $CLI bundle deploy -t dev -p $PROFILE --var='warehouse_id=$WAREHOUSE_ID' --var='catalog_name=$CATALOG'"
-echo "  $CLI -p $PROFILE apps deploy smartfactory-app --source-code-path /Workspace/Users/${USERNAME}@databricks.com/.bundle/smartfactory-demo/dev/files"
+echo "  $CLI -p $PROFILE apps deploy smartfactory-app --source-code-path $BUNDLE_SOURCE_PATH"

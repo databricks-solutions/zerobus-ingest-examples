@@ -378,8 +378,8 @@ async def stop_pipeline():
 # --- Dashboard Data Cache ---
 
 WAREHOUSE_ID = os.getenv("WAREHOUSE_ID")
-CATALOG = os.getenv("CATALOG_NAME", "dilan_catalog")
-PIPELINE_SCHEMA = os.getenv("PIPELINE_SCHEMA", "dev_dilan_patel_smartfactory")
+CATALOG = os.getenv("CATALOG_NAME", "main")
+PIPELINE_SCHEMA = os.getenv("PIPELINE_SCHEMA", "smartfactory")
 
 # Background cache — warehouse queries run here, frontend reads from cache
 dashboard_cache: dict = {
