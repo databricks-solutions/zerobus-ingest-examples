@@ -124,22 +124,22 @@
     {
       "name": "machine_summary",
       "displayName": "Machine Summary",
-      "query": "SELECT * FROM dilan_catalog.smartfactory.gold.machine_summary"
+      "query": "SELECT * FROM main.smartfactory.gold.machine_summary"
     },
     {
       "name": "enriched_events",
       "displayName": "Enriched Events",
-      "query": "SELECT * FROM dilan_catalog.smartfactory.silver.enriched_events WHERE timestamp > current_timestamp() - INTERVAL 1 HOUR ORDER BY timestamp DESC LIMIT 5000"
+      "query": "SELECT * FROM main.smartfactory.silver.enriched_events WHERE timestamp > current_timestamp() - INTERVAL 1 HOUR ORDER BY timestamp DESC LIMIT 5000"
     },
     {
       "name": "anomaly_timeline",
       "displayName": "Anomaly Timeline",
-      "query": "SELECT * FROM dilan_catalog.smartfactory.gold.anomaly_timeline LIMIT 500"
+      "query": "SELECT * FROM main.smartfactory.gold.anomaly_timeline LIMIT 500"
     },
     {
       "name": "health_kpis",
       "displayName": "Health KPIs",
-      "query": "SELECT * FROM dilan_catalog.smartfactory.gold.machine_health_kpis"
+      "query": "SELECT * FROM main.smartfactory.gold.machine_health_kpis"
     }
   ]
 }

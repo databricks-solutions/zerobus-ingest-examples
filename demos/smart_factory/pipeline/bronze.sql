@@ -17,4 +17,4 @@ AS SELECT
   CAST(timestamp AS TIMESTAMP) AS timestamp,
   COALESCE(is_fault, false) AS is_fault,
   current_timestamp() AS ingested_at
-FROM STREAM(dilan_catalog.smartfactory.raw_sensor_events);
+FROM STREAM(main.smartfactory.raw_sensor_events);

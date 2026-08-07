@@ -6,7 +6,6 @@ variables:
     description: "SQL Warehouse ID for dashboard queries"
   catalog_name:
     description: "Unity Catalog name"
-    default: dilan_catalog
 
 resources:
   schemas:
@@ -47,7 +46,3 @@ targets:
   dev:
     default: true
     mode: development
-    workspace:
-      profile: fevm-classic-stable-w6wiaf
-    variables:
-      warehouse_id: "01c7fe04f060528e"
