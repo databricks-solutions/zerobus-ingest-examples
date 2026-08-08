@@ -6,11 +6,13 @@ variables:
     description: "SQL Warehouse ID for dashboard queries"
   catalog_name:
     description: "Unity Catalog name"
+  schema_name:
+    description: "Landing and pipeline schema name"
 
 resources:
   schemas:
     smartfactory_schema:
-      name: smartfactory
+      name: ${var.schema_name}
       catalog_name: ${var.catalog_name}
       comment: "SmartFactory IoT demo — all pipeline tables"
 
@@ -18,11 +20,11 @@ resources:
     smartfactory_sdp:
       name: "smartfactory-sdp-pipeline"
       catalog: ${var.catalog_name}
-      target: smartfactory
+      target: ${var.schema_name}
       serverless: true
       libraries:
         - file:
-            path: pipeline/bronze.sql
+            path: .generated/pipeline/bronze.sql
         - file:
             path: pipeline/silver.sql
         - file:
@@ -39,7 +41,7 @@ resources:
   dashboards:
     smartfactory_dashboard:
       display_name: "SmartFactory Health Dashboard"
-      file_path: dashboards/smartfactory.lvdash.json
+      file_path: .generated/dashboards/smartfactory.lvdash.json
       warehouse_id: ${var.warehouse_id}
 
 targets:

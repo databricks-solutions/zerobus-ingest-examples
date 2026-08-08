@@ -2,17 +2,17 @@ command: ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
 env:
   - name: CATALOG_NAME
-    value: main
+    value: __CATALOG__
   - name: LANDING_SCHEMA
-    value: smartfactory
+    value: __LANDING_SCHEMA__
   - name: ZEROBUS_TABLE
-    value: main.smartfactory.raw_sensor_events
+    value: __CATALOG__.__LANDING_SCHEMA__.raw_sensor_events
   - name: WAREHOUSE_ID
-    value: ""
+    value: "__WAREHOUSE_ID__"
   - name: PIPELINE_SCHEMA
-    value: smartfactory
+    value: __PIPELINE_SCHEMA__
   - name: PIPELINE_ID
-    value: ""
+    value: "__PIPELINE_ID__"
   - name: ENABLE_SIMULATOR
     value: "false"
   - name: SIMULATOR_INTERVAL_MS

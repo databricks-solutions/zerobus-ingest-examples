@@ -1,7 +1,7 @@
--- Example one-time setup; replace the catalog name for your workspace.
+-- Example only. setup.sh creates this table using the selected catalog and schema.
 -- Schemas already created; this creates the landing table for ZeroBus
 
-CREATE TABLE IF NOT EXISTS main.smartfactory_landing.raw_sensor_events (
+CREATE TABLE IF NOT EXISTS <catalog>.<schema>.raw_sensor_events (
   machine_id STRING NOT NULL,
   machine_type STRING NOT NULL,
   sensor_name STRING NOT NULL,

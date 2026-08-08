@@ -27,9 +27,7 @@ class ZeroBusClient:
     """Wraps ZeroBus ingest API with SQL INSERT fallback."""
 
     def __init__(self, table_name: str | None = None):
-        self.table_name = table_name or os.getenv(
-            "ZEROBUS_TABLE", "main.smartfactory.raw_sensor_events"
-        )
+        self.table_name = table_name or os.environ["ZEROBUS_TABLE"]
         self.w = WorkspaceClient()
         self._use_fallback = not ZEROBUS_SDK_AVAILABLE
         self._warehouse_id = os.getenv("WAREHOUSE_ID")

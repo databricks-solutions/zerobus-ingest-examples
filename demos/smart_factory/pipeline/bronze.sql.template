@@ -17,4 +17,4 @@ AS SELECT
   CAST(timestamp AS TIMESTAMP) AS timestamp,
   COALESCE(is_fault, false) AS is_fault,
   current_timestamp() AS ingested_at
-FROM STREAM(main.smartfactory.raw_sensor_events);
+FROM STREAM(__CATALOG__.__LANDING_SCHEMA__.raw_sensor_events);

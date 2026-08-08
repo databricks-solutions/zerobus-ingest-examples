@@ -38,11 +38,11 @@ A customer-facing demo showing how Databricks turns factory sensor data into act
 ```bash
 git clone <repo-url>
 cd smartfactory-demo
-./setup.sh <databricks-cli-profile> <catalog_name>
+./setup.sh <databricks-cli-profile> <catalog_name> [schema_name] [warehouse_id]
 ```
 
 This script handles everything:
-1. Finds and starts a SQL warehouse
+1. Uses the requested SQL warehouse, or finds and starts one when omitted
 2. Creates the `smartfactory` schema and landing table
 3. Builds the React frontend
 4. Deploys all resources via DABs (app, pipeline, dashboard)
@@ -64,7 +64,10 @@ This script handles everything:
 ### Redeploying after code changes
 ```bash
 cd frontend && npm run build && cd ..
-databricks bundle deploy -t dev
+databricks bundle deploy -t dev \
+  --var="catalog_name=<catalog>" \
+  --var="schema_name=<schema>" \
+  --var="warehouse_id=<warehouse-id>"
 databricks apps deploy smartfactory-app \
   --source-code-path /Workspace/Users/<workspace-user>/.bundle/smartfactory-demo/dev/files
 ```
