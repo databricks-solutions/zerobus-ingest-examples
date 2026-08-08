@@ -5,13 +5,18 @@ set -e
 # Usage: ./setup.sh <databricks-cli-profile> <catalog_name> [schema_name] [warehouse_id]
 #
 # Prerequisites:
-#   - Databricks CLI v0.288+ installed (/opt/homebrew/bin/databricks)
+#   - Databricks CLI v0.288+ available on PATH (or set DATABRICKS_CLI)
 #   - Profile configured with workspace access
 #   - Node.js + npm installed (for frontend build)
+#   - Python 3 installed (for configuration rendering)
 
-CLI="/opt/homebrew/bin/databricks"
-PROFILE="${1:?Usage: ./setup.sh <cli-profile> <catalog_name> [schema_name] [warehouse_id]}"
-CATALOG="${2:?Usage: ./setup.sh <cli-profile> <catalog_name> [schema_name] [warehouse_id]}"
+CLI="${DATABRICKS_CLI:-$(command -v databricks || true)}"
+if [ -z "$CLI" ]; then
+    echo "ERROR: Databricks CLI not found. Add it to PATH or set DATABRICKS_CLI."
+    exit 1
+fi
+PROFILE="${1:?Usage: ./setup.sh <databricks-cli-profile> <catalog_name> [schema_name] [warehouse_id]}"
+CATALOG="${2:?Usage: ./setup.sh <databricks-cli-profile> <catalog_name> [schema_name] [warehouse_id]}"
 SCHEMA="${3:-smartfactory}"
 WAREHOUSE_ID="${4:-}"
 PIPELINE_NAME="smartfactory-sdp"
@@ -174,7 +179,7 @@ PIPELINE_ID=$($CLI -p "$PROFILE" api get /api/2.0/pipelines 2>/dev/null | python
 import sys, json
 d = json.load(sys.stdin)
 for p in d.get('statuses', []):
-    if 'smartfactory-sdp' in p.get('name', ''):
+    if '${PIPELINE_NAME}' in p.get('name', ''):
         print(p['pipeline_id'])
         break
 " 2>/dev/null)

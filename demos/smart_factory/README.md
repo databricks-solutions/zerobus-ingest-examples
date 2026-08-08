@@ -32,23 +32,29 @@ A customer-facing demo showing how Databricks turns factory sensor data into act
 - [Databricks CLI](https://docs.databricks.com/dev-tools/cli/index.html) v0.288+ installed
 - CLI profile configured for your target workspace
 - Node.js 18+ and npm installed
+- Python 3 installed
 - An existing Unity Catalog catalog with cloud storage configured
+- An existing SQL warehouse, unless a warehouse ID is supplied explicitly
 
 ### One-command setup
 ```bash
 git clone <repo-url>
-cd smartfactory-demo
+cd zerobus-ingest-examples/demos/smart_factory
 ./setup.sh <databricks-cli-profile> <catalog_name> [schema_name] [warehouse_id]
 ```
 
+`schema_name` defaults to `smartfactory`. When `warehouse_id` is omitted, the
+script selects the first SQL warehouse available to the configured profile.
+
 This script handles everything:
 1. Uses the requested SQL warehouse, or finds and starts one when omitted
-2. Creates the `smartfactory` schema and landing table
+2. Creates the selected schema and landing table
 3. Builds the React frontend
-4. Deploys all resources via DABs (app, pipeline, dashboard)
-5. Detects the app service principal and grants all permissions
-6. Starts the app and deploys code
-7. Sets the SDP pipeline to continuous mode
+4. Renders workspace-specific app, pipeline, and dashboard configuration
+5. Deploys all resources via DABs (app, pipeline, dashboard)
+6. Detects the app service principal and grants all permissions
+7. Starts the app and deploys its code
+8. Configures the SDP pipeline and updates the app with its ID
 
 ### After setup
 1. Open the app URL printed by the script
@@ -62,13 +68,17 @@ This script handles everything:
 > The simulator and pipeline start paused by default — you must manually start them each demo session.
 
 ### Redeploying after code changes
+
+Run these commands from `demos/smart_factory` after completing the initial setup,
+which creates `app.yaml` and `.generated/`:
+
 ```bash
 cd frontend && npm run build && cd ..
-databricks bundle deploy -t dev \
+databricks bundle deploy -t dev -p <databricks-cli-profile> \
   --var="catalog_name=<catalog>" \
   --var="schema_name=<schema>" \
   --var="warehouse_id=<warehouse-id>"
-databricks apps deploy smartfactory-app \
+databricks -p <databricks-cli-profile> apps deploy smartfactory-app \
   --source-code-path /Workspace/Users/<workspace-user>/.bundle/smartfactory-demo/dev/files
 ```
 
@@ -78,14 +88,17 @@ databricks apps deploy smartfactory-app \
 smartfactory-demo/
 ├── setup.sh                  # One-command setup script
 ├── databricks.yml            # DABs bundle (app + pipeline + dashboard)
-├── app.yaml                  # Databricks App config
-├── app.py                    # FastAPI backend (WebSocket + REST + pipeline control)
-├── simulator.py              # 3-machine IoT sensor simulator with fault injection
-├── zerobus_client.py         # ZeroBus SDK wrapper with SQL INSERT fallback
+├── app.yaml.template         # Template rendered by setup.sh
+├── src/
+│   ├── app.py                # FastAPI backend (WebSocket + REST + pipeline control)
+│   ├── simulator.py          # 3-machine IoT sensor simulator with fault injection
+│   └── zerobus_client.py     # ZeroBus SDK wrapper with SQL INSERT fallback
 ├── pipeline/
-│   ├── bronze.sql            # Validated ingestion (streaming table)
+│   ├── bronze.sql.template   # Ingestion template rendered by setup.sh
 │   ├── silver.sql            # Anomaly scoring via threshold JOIN (streaming table)
 │   └── gold.sql              # Health KPIs + anomaly timeline (materialized views)
+├── dashboards/
+│   └── smartfactory.lvdash.json.template
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx           # Tabbed layout (IoT Simulation + Dashboard)
@@ -100,8 +113,7 @@ smartfactory-demo/
 │   │   └── hooks/
 │   │       └── useWebSocket  # Auto-reconnecting WebSocket hook
 │   └── dist/                 # Pre-built frontend (deployed with app)
-├── dashboard.lvdash.json     # Lakeview dashboard definition
-└── CLAUDE.md                 # Development notes and known issues
+└── .generated/               # Workspace-specific files created by setup.sh
 ```
 
 ## Tech Stack

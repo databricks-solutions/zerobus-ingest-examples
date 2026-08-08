@@ -1,6 +1,11 @@
 bundle:
   name: smartfactory-demo
 
+sync:
+  include:
+    - app.yaml
+    - .generated/**
+
 variables:
   warehouse_id:
     description: "SQL Warehouse ID for dashboard queries"
