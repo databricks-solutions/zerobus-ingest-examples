@@ -80,8 +80,14 @@ def build_agent():
           from langchain.chat_models import init_chat_model
           model = init_chat_model("anthropic:claude-3-5-haiku-latest")   # needs that provider's key
     """
-    # Enable SUMMARIZED extended thinking so the model's reasoning is captured in the trace
-    # (Sonnet-class models omit raw reasoning by default). A model param, not a ZeroBus concern.
+    # We use Databricks (ChatDatabricks -> an AI Gateway / Model Serving endpoint) as the model provider
+    # here, but this is still plain LangChain — no special modification. Use whatever provider you like:
+    # swap this one line for ChatOpenAI, ChatAnthropic, init_chat_model("<provider>:<model>"), etc. The
+    # agent, the instrumentation, and the ZeroBus export path are all identical regardless of provider.
+    #
+    # (The extra_params below just enable SUMMARIZED extended thinking so the model's reasoning shows up
+    #  in the trace — Sonnet-class models omit raw reasoning by default. It's a model param, not a
+    #  ZeroBus concern, and is Databricks/Anthropic-specific — drop it for other providers.)
     model = ChatDatabricks(
         endpoint=MODEL_ENDPOINT,
         extra_params={"extra_body": {"thinking": {"type": "adaptive", "display": "summarized"}}},
