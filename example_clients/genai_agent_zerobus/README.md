@@ -20,8 +20,7 @@ Python agent.
 | File | What it is |
 |---|---|
 | [`zerobus_otel.py`](zerobus_otel.py) | **The drop-in.** In-process OTLP→Zerobus exporter + the OAuth auth flow. Import it into any agent. |
-| [`langchain_agent.py`](langchain_agent.py) | Worked example: instrument a LangChain agent with two lines and ship its spans to Zerobus. |
-| [`weather_agent.py`](weather_agent.py) | Richer example: a reasoning + tool-calling agent (a live weather tool) — shows the model reason, call the tool, and answer. Same ZeroBus wiring; only the LangChain code changed. |
+| [`langchain_agent.py`](langchain_agent.py) | Worked example: a reasoning + tool-calling LangChain agent (a live weather tool) — the model reasons, calls the tool, and answers. Instrumented with two lines; ships its spans to Zerobus. |
 | [`notebook/zerobus_otel_journey.py`](notebook/zerobus_otel_journey.py) | End-to-end explainer notebook (Databricks): creates the tables + experiment, runs the agent, verifies, and shows the trace. |
 | `.env.example` | Configuration template. |
 | `requirements.txt` | Dependencies. |
@@ -112,7 +111,7 @@ python langchain_agent.py
 it runs with no external API key — set `MODEL_ENDPOINT` to any chat endpoint in your workspace. **The
 model provider is irrelevant to ZeroBus:** the instrumentor emits `gen_ai.*` spans by hooking LangChain's
 callbacks, not a provider SDK, so the export path is identical whatever you call here. To use a different
-provider, swap the one `model = ...` line in `build_chain()` — e.g. `init_chat_model("<provider>:<model>")`
+provider, swap the one `model = ...` line in `build_agent()` — e.g. `init_chat_model("<provider>:<model>")`
 (needs that provider's key); everything else stays the same.
 
 Verify the spans landed (SQL Editor, or Catalog Explorer under your `<schema>`):
