@@ -21,7 +21,7 @@ Python agent.
 |---|---|
 | [`zerobus_otel.py`](zerobus_otel.py) | **The drop-in.** In-process OTLP→Zerobus exporter + the OAuth auth flow. Import it into any agent. |
 | [`langchain_agent.py`](langchain_agent.py) | Worked example: a reasoning + tool-calling LangChain agent (a live weather tool) — the model reasons, calls the tool, and answers. Instrumented with two lines; ships its spans to Zerobus. |
-| [`zerobus_otel_journey.py`](zerobus_otel_journey.py) | End-to-end **Databricks notebook**: creates the tables + experiment, creates the service principal, runs the agent, verifies, and shows the trace. Imports `zerobus_otel.py` + `langchain_agent.py` from this folder — run it from a clone of the repo. |
+| [`zerobus_otel_journey.ipynb`](zerobus_otel_journey.ipynb) | End-to-end **Databricks notebook**: creates the tables + experiment, creates the service principal, runs the agent, verifies, and shows the trace. Imports `zerobus_otel.py` + `langchain_agent.py` from this folder — run it from a clone of the repo. |
 | `.env.example` | Configuration template. |
 | `requirements.txt` | Dependencies. |
 
@@ -141,7 +141,7 @@ ORDER BY start_time_unix_nano;
 
 ### Or run it as a notebook in Databricks
 
-Prefer to do the whole thing in the workspace? [`zerobus_otel_journey.py`](zerobus_otel_journey.py) is a
+Prefer to do the whole thing in the workspace? [`zerobus_otel_journey.ipynb`](zerobus_otel_journey.ipynb) is a
 Databricks notebook that runs this end to end — it even creates the destination tables, the MLflow
 experiment, and the service principal for you.
 
@@ -149,7 +149,7 @@ experiment, and the service principal for you.
 `zerobus_otel.py` and `langchain_agent.py` from this folder, so it must run where those files live:
 
 1. Clone the repo as a **Git folder**: sidebar → **Workspace** → **Create → Git folder** → paste the repo URL.
-2. Open `example_clients/genai_agent_zerobus/zerobus_otel_journey.py` from the clone.
+2. Open `example_clients/genai_agent_zerobus/zerobus_otel_journey.ipynb` from the clone.
 3. Attach compute (serverless is fine), fill in the **Configuration** cell, and **Run all**.
 
 ## Drop it into your own agent
