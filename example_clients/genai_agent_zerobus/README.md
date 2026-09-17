@@ -145,12 +145,17 @@ Prefer to do the whole thing in the workspace? [`zerobus_otel_journey.ipynb`](ze
 Databricks notebook that runs this end to end — it even creates the destination tables, the MLflow
 experiment, and the service principal for you.
 
-**Requirement: clone this repo and run the notebook from inside it.** The notebook imports
-`zerobus_otel.py` and `langchain_agent.py` from this folder, so it must run where those files live:
+**Requirement: the notebook must sit next to `zerobus_otel.py` and `langchain_agent.py`** — it imports them,
+so the whole `genai_agent_zerobus/` folder has to be in your workspace together. Two ways to get it there:
 
-1. Clone the repo as a **Git folder**: sidebar → **Workspace** → **Create → Git folder** → paste the repo URL.
-2. Open `example_clients/genai_agent_zerobus/zerobus_otel_journey.ipynb` from the clone.
-3. Attach compute (serverless is fine), fill in the **Configuration** cell, and **Run all**.
+- **Option A — Clone the repo as a Git folder** (recommended; stays updatable): sidebar → **Workspace** →
+  **Create → Git folder** → paste `https://github.com/databricks-solutions/zerobus-ingest-examples`, then open
+  `example_clients/genai_agent_zerobus/zerobus_otel_journey.ipynb` from the clone.
+- **Option B — Upload just this folder** (no Git): import the whole `example_clients/genai_agent_zerobus/`
+  folder into your workspace (**Workspace → Import**, or `databricks sync ./genai_agent_zerobus <workspace-path>`),
+  keeping all the files together so the imports resolve.
+
+Then attach compute (serverless is fine), fill in the **Configuration** cell, and **Run all**.
 
 ## Drop it into your own agent
 
