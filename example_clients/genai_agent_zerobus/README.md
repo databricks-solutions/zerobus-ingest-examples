@@ -27,7 +27,23 @@ Python agent.
 
 ## How the auth works
 
-Zerobus accepts OTLP with two things beyond standard OpenTelemetry, on every request:
+![Authenticate and authorize a producer to write to its ZeroBus table](auth-flow.png)
+
+The diagram above is the exact flow `zerobus_otel.py` implements (via the Databricks SDK's
+`ClientCredentials` token source) — one token per signal, each scoped to its own table:
+
+1. **Request a token** — the exporter calls the workspace **OIDC** endpoint with the service principal's
+   `client_id` + `client_secret` (OAuth `client_credentials`).
+2. **Scope it to the table** — the request carries `resource = …/zerobusDirectWriteApi` (the ZeroBus
+   audience) **and** `authorization_details` = `SELECT`/`MODIFY` on the *exact target table* (RFC 9396).
+   OIDC returns a short-lived (~1h) token that is both **authenticated** (a valid SP) and **authorized**
+   (for that one table). The SDK caches and auto-refreshes it.
+3. **Write** — every OTLP/gRPC call (over TLS) carries `authorization: Bearer <token>` plus the
+   `x-databricks-zerobus-table-name: <catalog.schema.table>` header.
+4. **Append** — ZeroBus validates the token's audience + per-table authorization and appends the rows to
+   the Unity Catalog table.
+
+Concretely, Zerobus accepts OTLP with two things beyond standard OpenTelemetry, on every request:
 
 1. **A bearer token** — minted for a **service principal** via OAuth client-credentials, scoped to
    Zerobus with a `resource` audience (`api://databricks/workspaces/<id>/zerobusDirectWriteApi`) and
