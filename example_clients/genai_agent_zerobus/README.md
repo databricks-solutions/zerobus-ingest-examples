@@ -37,9 +37,32 @@ Zerobus accepts OTLP with two things beyond standard OpenTelemetry, on every req
 `zerobus_otel.py` handles all of it using the **Databricks SDK's `ClientCredentials`** token source,
 which mints and **auto-refreshes** the token for you. Two lifetimes to keep straight:
 
-- The **access token** the SDK sends is short-lived (**~1 hour**) and refreshed automatically.
+- The **access token** the SDK sends is short-lived (**~1 hour**) and refreshed automatically — this is
+  handled for you in `zerobus_otel.py`; nothing to implement.
 - It refreshes from the service principal's **`client_secret`** — the long-lived credential you create
-  once and store securely.
+  once and store securely. This secret has its own expiry and is **not** auto-rotated (see below).
+
+### Rotating the client secret (recommended for production)
+
+Access-token refresh is automatic; the `client_secret` behind it is not. Databricks SP OAuth secrets
+expire (up to 2 years), so a long-lived deployment must rotate the secret before it lapses — otherwise
+token minting starts failing and ingestion stops. This example reads the secret once at startup; for
+production, add rotation:
+
+- **Store the secret in a secret manager, not a file** — Databricks secret scopes, or your cloud's
+  manager (AWS Secrets Manager, Azure Key Vault, GCP Secret Manager). Reference it, never hard-code it.
+- **Rotate on a schedule, zero-downtime.** A service principal can hold **up to 5 OAuth secrets**, so
+  create the new one *before* revoking the old: mint new → store in the secret manager → confirm the
+  app picks it up → then delete the old secret. Automate this on a timer well inside the secret's lifetime.
+- **Re-read the secret on failure, don't just cache at startup.** Have the app re-fetch `client_secret`
+  from the secret manager when a token mint returns `invalid_client` (secret expired/rotated), so a
+  rotation doesn't require a restart. In this example that means recreating `ZerobusConfig`/providers with
+  the fresh value on that error.
+- **Least privilege:** give each agent/team its own service principal, so rotating or revoking one
+  secret never affects others.
+
+See [OAuth M2M authentication](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m) for creating
+and managing SP secrets.
 
 ## Prerequisites
 
@@ -72,6 +95,7 @@ Copy `.env.example` to `.env` and fill it in (only `DATABRICKS_CLIENT_SECRET` is
 | `WORKSPACE_ID` | Numeric workspace id (the `o=...` in the workspace URL). |
 | `REGION` | e.g. `us-west-2`. |
 | `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` | The service principal's OAuth credentials. |
+| `MODEL_ENDPOINT` | The chat model the agent calls — a Databricks AI Gateway / Model Serving endpoint name. |
 | `OTEL_SERVICE_NAME` | How this producer is named in the traces (what you filter on). |
 
 ## Quick start
@@ -83,9 +107,12 @@ set -a; . ./.env; set +a        # load config into the environment
 python langchain_agent.py
 ```
 
-By default `langchain_agent.py` uses a fake chat model, so it runs with **no model API key** and still
-emits `gen_ai.*` spans. To use a real model, swap one line in `build_chain()` (see the comments) — e.g.
-`ChatDatabricks(endpoint=...)` on Databricks, or `init_chat_model("<provider>:<model>")` for any provider.
+`langchain_agent.py` calls a **Databricks AI Gateway** (Model Serving) endpoint via `ChatDatabricks`, so
+it runs with no external API key — set `MODEL_ENDPOINT` to any chat endpoint in your workspace. **The
+model provider is irrelevant to ZeroBus:** the instrumentor emits `gen_ai.*` spans by hooking LangChain's
+callbacks, not a provider SDK, so the export path is identical whatever you call here. To use a different
+provider, swap the one `model = ...` line in `build_chain()` — e.g. `init_chat_model("<provider>:<model>")`
+(needs that provider's key); everything else stays the same.
 
 Verify the spans landed (SQL Editor, or Catalog Explorer under your `<schema>`):
 

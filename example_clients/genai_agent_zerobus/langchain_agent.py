@@ -21,13 +21,16 @@ from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 
-from langchain_core.language_models.fake_chat_models import FakeListChatModel
+from databricks_langchain import ChatDatabricks
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from zerobus_otel import ZerobusConfig, build_providers
+from zerobus_otel import ZerobusConfig, build_providers # custom module - Will handle authentication and exporting the spans to ZeroBus.
 
 SERVICE_NAME = os.environ.get("OTEL_SERVICE_NAME", "genai-agent")
+# Model Serving / AI Gateway endpoint NAME (not a URL). Any chat endpoint works; find yours under
+# "Serving" in the workspace. Governed by Databricks AI Gateway (rate limits, usage tracking, guardrails).
+MODEL_ENDPOINT = os.environ.get("MODEL_ENDPOINT", "databricks-claude-sonnet-5")
 QUESTION = "What's the weather in Paris, and should I bring an umbrella?"
 
 
@@ -37,19 +40,13 @@ def build_chain():
         ("system", "You are a helpful weather assistant. Answer in one sentence."),
         ("human", "{question}"),
     ])
-    # Default: a fake model so the example runs with NO model API key — the instrumentor still
-    # emits gen_ai.* spans because it hooks LangChain's callbacks, not a provider SDK.
-    #
-    # Swap in your real model — the export path is unchanged. Two common options:
-    #   • Databricks Model Serving (no external key):
-    #       from databricks_langchain import ChatDatabricks
-    #       model = ChatDatabricks(endpoint="databricks-claude-sonnet-5")
-    #   • Any provider, provider-agnostic (needs that provider's key):
+    # This example calls a Databricks AI Gateway (Model Serving) endpoint, so it runs with no external
+    # API key. The model provider does NOT matter to ZeroBus — the instrumentor emits gen_ai.* spans by
+    # hooking LangChain's callbacks, not a provider SDK, so the export path below is identical whatever
+    # you use here. To point at your own provider instead, swap just this one line, e.g.:
     #       from langchain.chat_models import init_chat_model
-    #       model = init_chat_model("anthropic:claude-3-5-haiku-latest")
-    model = FakeListChatModel(
-        responses=["It's 14°C with light rain in Paris right now — yes, bring an umbrella!"],
-    )
+    #       model = init_chat_model("anthropic:claude-3-5-haiku-latest")   # needs that provider's key
+    model = ChatDatabricks(endpoint=MODEL_ENDPOINT)
     return prompt | model | StrOutputParser()
 
 
