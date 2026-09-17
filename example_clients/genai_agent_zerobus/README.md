@@ -21,6 +21,7 @@ Python agent.
 |---|---|
 | [`zerobus_otel.py`](zerobus_otel.py) | **The drop-in.** In-process OTLP→Zerobus exporter + the OAuth auth flow. Import it into any agent. |
 | [`langchain_agent.py`](langchain_agent.py) | Worked example: instrument a LangChain agent with two lines and ship its spans to Zerobus. |
+| [`weather_agent.py`](weather_agent.py) | Richer example: a reasoning + tool-calling agent (a live weather tool) — shows the model reason, call the tool, and answer. Same ZeroBus wiring; only the LangChain code changed. |
 | [`notebook/zerobus_otel_journey.py`](notebook/zerobus_otel_journey.py) | End-to-end explainer notebook (Databricks): creates the tables + experiment, runs the agent, verifies, and shows the trace. |
 | `.env.example` | Configuration template. |
 | `requirements.txt` | Dependencies. |
