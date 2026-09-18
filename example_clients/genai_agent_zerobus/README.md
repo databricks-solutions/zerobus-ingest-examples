@@ -5,10 +5,7 @@ Send a Python GenAI agent's **OpenTelemetry** telemetry — traces, logs, metric
 **MLflow**. No collector, no sidecar: the agent authenticates as a service principal and exports
 OTLP/gRPC directly to Zerobus.
 
-```
-Your Python agent ──(OpenTelemetry)──► Zerobus Ingest ──► Unity Catalog Delta ──► MLflow Traces UI
-     gen_ai.* spans        OTLP/gRPC :443                   <prefix>_otel_*         agentic trace tree
-```
+![Agents emit OpenTelemetry over OTLP to Zerobus Ingest, which lands the data in Delta Lake tables in Databricks; MLflow reads those tables as agentic traces](architecture.png)
 
 Because the popular agent frameworks already emit the OpenTelemetry GenAI (`gen_ai.*`) semantic
 conventions, wiring one to Zerobus is a **configuration change, not a rewrite**. This example uses
