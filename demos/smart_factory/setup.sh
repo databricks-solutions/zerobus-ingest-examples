@@ -2,17 +2,23 @@
 set -e
 
 # SmartFactory Demo — One-time setup script
-# Usage: ./setup.sh <databricks-cli-profile> [catalog_name]
+# Usage: ./setup.sh <databricks-cli-profile> <catalog_name> [schema_name] [warehouse_id]
 #
 # Prerequisites:
-#   - Databricks CLI v0.288+ installed (/opt/homebrew/bin/databricks)
+#   - Databricks CLI v0.288+ available on PATH (or set DATABRICKS_CLI)
 #   - Profile configured with workspace access
 #   - Node.js + npm installed (for frontend build)
+#   - Python 3 installed (for configuration rendering)
 
-CLI="/opt/homebrew/bin/databricks"
-PROFILE="${1:?Usage: ./setup.sh <cli-profile> [catalog_name]}"
-CATALOG="${2:-dilan_catalog}"
-SCHEMA="smartfactory"
+CLI="${DATABRICKS_CLI:-$(command -v databricks || true)}"
+if [ -z "$CLI" ]; then
+    echo "ERROR: Databricks CLI not found. Add it to PATH or set DATABRICKS_CLI."
+    exit 1
+fi
+PROFILE="${1:?Usage: ./setup.sh <databricks-cli-profile> <catalog_name> [schema_name] [warehouse_id]}"
+CATALOG="${2:?Usage: ./setup.sh <databricks-cli-profile> <catalog_name> [schema_name] [warehouse_id]}"
+SCHEMA="${3:-smartfactory}"
+WAREHOUSE_ID="${4:-}"
 PIPELINE_NAME="smartfactory-sdp"
 
 echo "========================================="
@@ -24,14 +30,16 @@ echo "Schema:   $SCHEMA"
 echo ""
 
 # --- Step 1: Find or start a SQL warehouse ---
-echo "[1/8] Finding SQL warehouse..."
-WAREHOUSE_ID=$($CLI -p "$PROFILE" warehouses list --output json 2>/dev/null | python3 -c "
+echo "[1/8] Selecting SQL warehouse..."
+if [ -z "$WAREHOUSE_ID" ]; then
+    WAREHOUSE_ID=$($CLI -p "$PROFILE" warehouses list --output json 2>/dev/null | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 for w in data:
     print(w['id'])
     break
 " 2>/dev/null)
+fi
 
 if [ -z "$WAREHOUSE_ID" ]; then
     echo "ERROR: No SQL warehouse found. Create one in the workspace first."
@@ -66,10 +74,47 @@ cd ..
 echo "[4/8] Configuring bundle..."
 
 # Detect current user for dev schema prefix
-USERNAME=$($CLI -p "$PROFILE" current-user me --output json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); u=d.get('userName','').split('@')[0].replace('.','_'); print(u)")
-DEV_SCHEMA="dev_${USERNAME}_${SCHEMA}"
+WORKSPACE_USER=$($CLI -p "$PROFILE" current-user me --output json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('userName',''))")
+SCHEMA_USER=$(printf '%s' "${WORKSPACE_USER%%@*}" | tr '.-' '__')
+DEV_SCHEMA="dev_${SCHEMA_USER}_${SCHEMA}"
+BUNDLE_SOURCE_PATH="/Workspace/Users/${WORKSPACE_USER}/.bundle/smartfactory-demo/dev/files"
 
 echo "  Dev schema will be: ${CATALOG}.${DEV_SCHEMA}"
+
+render_templates() {
+    local pipeline_id="${1:-}"
+    CATALOG_VALUE="$CATALOG" \
+    LANDING_SCHEMA_VALUE="$SCHEMA" \
+    PIPELINE_SCHEMA_VALUE="$DEV_SCHEMA" \
+    WAREHOUSE_ID_VALUE="$WAREHOUSE_ID" \
+    PIPELINE_ID_VALUE="$pipeline_id" \
+    python3 - <<'PY'
+import os
+from pathlib import Path
+
+values = {
+    "__CATALOG__": os.environ["CATALOG_VALUE"],
+    "__LANDING_SCHEMA__": os.environ["LANDING_SCHEMA_VALUE"],
+    "__PIPELINE_SCHEMA__": os.environ["PIPELINE_SCHEMA_VALUE"],
+    "__WAREHOUSE_ID__": os.environ["WAREHOUSE_ID_VALUE"],
+    "__PIPELINE_ID__": os.environ["PIPELINE_ID_VALUE"],
+}
+
+def render(source, destination):
+    content = Path(source).read_text()
+    for placeholder, value in values.items():
+        content = content.replace(placeholder, value)
+    target = Path(destination)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+
+render("app.yaml.template", "app.yaml")
+render("pipeline/bronze.sql.template", ".generated/pipeline/bronze.sql")
+render("dashboards/smartfactory.lvdash.json.template", ".generated/dashboards/smartfactory.lvdash.json")
+PY
+}
+
+render_templates
 
 # Write a local env file for the setup
 cat > .env.setup <<EOF
@@ -78,12 +123,12 @@ CATALOG=$CATALOG
 SCHEMA=$SCHEMA
 WAREHOUSE_ID=$WAREHOUSE_ID
 DEV_SCHEMA=$DEV_SCHEMA
-USERNAME=$USERNAME
+WORKSPACE_USER=$WORKSPACE_USER
 EOF
 
 # --- Step 5: Deploy bundle ---
 echo "[5/8] Deploying bundle..."
-$CLI bundle deploy -t dev -p "$PROFILE" --var="warehouse_id=$WAREHOUSE_ID" --var="catalog_name=$CATALOG"
+$CLI bundle deploy -t dev -p "$PROFILE" --var="warehouse_id=$WAREHOUSE_ID" --var="catalog_name=$CATALOG" --var="schema_name=$SCHEMA"
 
 # --- Step 6: Get app service principal and grant permissions ---
 echo "[6/8] Granting permissions to app service principal..."
@@ -126,7 +171,7 @@ echo "  Waiting for app compute..."
 sleep 30
 
 $CLI -p "$PROFILE" apps deploy smartfactory-app \
-    --source-code-path "/Workspace/Users/${USERNAME}@databricks.com/.bundle/smartfactory-demo/dev/files" 2>&1 | tail -1
+    --source-code-path "$BUNDLE_SOURCE_PATH" 2>&1 | tail -1
 
 # --- Step 8: Find pipeline ID, grant SP permissions, set continuous ---
 echo "[8/8] Configuring pipeline..."
@@ -134,7 +179,7 @@ PIPELINE_ID=$($CLI -p "$PROFILE" api get /api/2.0/pipelines 2>/dev/null | python
 import sys, json
 d = json.load(sys.stdin)
 for p in d.get('statuses', []):
-    if 'smartfactory-sdp' in p.get('name', ''):
+    if '${PIPELINE_NAME}' in p.get('name', ''):
         print(p['pipeline_id'])
         break
 " 2>/dev/null)
@@ -163,11 +208,11 @@ print(json.dumps(spec))
     $CLI -p "$PROFILE" api put "/api/2.0/pipelines/$PIPELINE_ID" --json @/tmp/smartfactory_pipeline.json > /dev/null 2>&1
     echo "  Pipeline set to continuous mode"
 
-    # Update app.yaml with pipeline ID (for next deploy)
-    echo ""
-    echo "NOTE: Add this to app.yaml env vars for pipeline control:"
-    echo "  - name: PIPELINE_ID"
-    echo "    value: \"$PIPELINE_ID\""
+    # Render the discovered pipeline ID into the app configuration and redeploy.
+    render_templates "$PIPELINE_ID"
+    $CLI -p "$PROFILE" apps deploy smartfactory-app \
+        --source-code-path "$BUNDLE_SOURCE_PATH" > /dev/null
+    echo "  App configuration updated"
 else
     echo "  WARNING: Pipeline not found. Deploy may still be in progress."
 fi
@@ -194,5 +239,5 @@ echo "  3. Inject faults and watch data flow!"
 echo ""
 echo "To redeploy after code changes:"
 echo "  cd frontend && npm run build && cd .."
-echo "  $CLI bundle deploy -t dev -p $PROFILE --var='warehouse_id=$WAREHOUSE_ID' --var='catalog_name=$CATALOG'"
-echo "  $CLI -p $PROFILE apps deploy smartfactory-app --source-code-path /Workspace/Users/${USERNAME}@databricks.com/.bundle/smartfactory-demo/dev/files"
+echo "  $CLI bundle deploy -t dev -p $PROFILE --var='warehouse_id=$WAREHOUSE_ID' --var='catalog_name=$CATALOG' --var='schema_name=$SCHEMA'"
+echo "  $CLI -p $PROFILE apps deploy smartfactory-app --source-code-path $BUNDLE_SOURCE_PATH"
