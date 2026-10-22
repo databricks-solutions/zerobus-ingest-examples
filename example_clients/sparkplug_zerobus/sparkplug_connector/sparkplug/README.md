@@ -105,7 +105,7 @@ zerobus:
   auth: {client_id: ..., client_secret: ...}   # the service principal
   # drain_timeout_seconds: 15             # on stop: write what is queued first, for at most this long
   # wal:                                  # write-ahead log: rows on disk until Zerobus acknowledged them
-  #   enabled: true                       # off by default
+  #   enabled: true                       # off without it; on in the example config.yaml
   #   path: wal                           # one subdirectory per target table
   #   fsync_interval_seconds: 0.2         # each row reaches the OS at once; fsync this often
   #   segment_mb: 16
@@ -157,7 +157,7 @@ one with the same id fights over STATE, and two connectors with different ids wr
   the stream is closed and the same batch resent on a fresh one (backoff 1 s doubling to 30 s), so rows
   are written at least once with their `msg_id`. A row over Zerobus's 10,420,224-byte record limit is
   skipped and counted (`rows_too_large`) instead of being retried forever.
-- **Write-ahead log** (`core/wal.py`, `zerobus.wal`, off by default): each row is appended to the
+- **Write-ahead log** (`core/wal.py`, `zerobus.wal`; off unless enabled, on in the example `config.yaml`): each row is appended to the
   target's log before it is queued and marked done once Zerobus acknowledged it (or the queue dropped it).
   After a crash, the next start queues the rows not done first, with their `msg_id`: the batch in flight
   and everything queued during a Databricks outage, which would otherwise be lost (Sparkplug data is QoS

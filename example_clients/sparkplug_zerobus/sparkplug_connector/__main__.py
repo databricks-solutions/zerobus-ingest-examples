@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -27,7 +28,13 @@ log_config = LogRotationConfig(
     retention_days=90,                # 90-day retention
 )
 
-logging_manager = configure_advanced_logging(log_config)
+# CONNECTOR_LOG_FILES=false: the console only (the Docker image: docker logs, rotated by Docker), no log files
+LOG_FILES = os.environ.get('CONNECTOR_LOG_FILES', 'true').strip().lower() not in ('false', '0', 'no', 'off')
+if LOG_FILES:
+    logging_manager = configure_advanced_logging(log_config)
+else:
+    logging_manager = None
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', force=True)
 logger = logging.getLogger(__name__)
 
 
@@ -81,11 +88,12 @@ class Connector:
         else:
             logger.info("Bridge autostart disabled (web UI / diagnostics mode)")
 
-        # Start log maintenance task
-        self._log_maintenance_task = asyncio.create_task(
-            logging_manager.start_maintenance_task()
-        )
-        logger.info("✓ Log maintenance task started")
+        # Start log maintenance task (rotation, archive, retention of the log files)
+        if logging_manager is not None:
+            self._log_maintenance_task = asyncio.create_task(
+                logging_manager.start_maintenance_task()
+            )
+            logger.info("✓ Log maintenance task started")
 
         logger.info("=" * 80)
         logger.info("✓ Sparkplug Zerobus connector is running")

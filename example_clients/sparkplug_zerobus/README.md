@@ -13,7 +13,7 @@ Sparkplug message** to a Delta table through Zerobus Ingest.
 - **Web UI** to add, edit, start and stop sources and Zerobus, with an optional login; a health endpoint for Docker.
 
 This folder is exported from [nickconnors/sparkplug-zerobus-connector](https://github.com/nickconnors/sparkplug-zerobus-connector)
-(commit [`a42076f`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/a42076f)), which keeps the
+(commit [`0cd004b`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/0cd004b)), which keeps the
 Sparkplug B path of [pravinva/unified-ot-zerobus-connector](https://github.com/pravinva/unified-ot-zerobus-connector)
 (see [Unified OT Zerobus](../unified_ot_zerobus/) for its multi-protocol version). The tests and the web UI's source
 code live there.
@@ -65,7 +65,7 @@ GRANT MODIFY, SELECT ON TABLE bridge_stage_db.stage_db.sparkplug_raw TO `<applic
 ```
 
   The names are an example (any catalog, schema and table work). Column comments and sample queries:
-  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/a42076f/docs/UNITY_CATALOG_SCHEMAS.md);
+  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/0cd004b/docs/UNITY_CATALOG_SCHEMAS.md);
   the grants for the NBIRTH call: [sparkplug_connector/sparkplug/README.md](sparkplug_connector/sparkplug/README.md#databricks-setup).
 - The Zerobus endpoint: `<workspace-id>.zerobus.<region>.cloud.databricks.com`.
 - An MQTT user that may subscribe to `spBv1.0/#` and, as a primary host, publish its own STATE topic
@@ -100,18 +100,27 @@ From this folder (`--build-arg PIP_INDEX_URL=<your index>` if pypi.org isn't rea
 
 ```
 docker build -t sparkplug-zerobus .
-docker run -d --name sparkplug-zerobus --restart unless-stopped --env-file connector.env \
+docker run -d --name sparkplug-zerobus --restart unless-stopped --stop-timeout 30 --env-file connector.env \
   -p 127.0.0.1:8001:8001 \
   --mount type=bind,source="$PWD/my-config.yaml",target=/app/sparkplug_connector/config/config.yaml \
   --mount type=volume,source=connector-wal,target=/app/wal \
   sparkplug-zerobus --config /app/sparkplug_connector/config/config.yaml
 ```
 
-- `connector.env` holds the variables above. Your file is mounted over the shipped example and passed with
-  `--config`; edits made on the web page are saved into it, so don't mount it read-only.
+- `connector.env` holds the variables above; keep the secrets there (a client secret saved on the web page goes
+  to an encrypted store in the container's home directory and is gone when the container is recreated).
+- Your file is mounted over the shipped example and passed with `--config`; edits made on the web page are saved
+  into it, so don't mount it read-only. The container runs as uid 1000: on Linux, make the file writable by it
+  (`sudo chown 1000 my-config.yaml`), or the page's saves fail.
 - Use `--mount`, not `-v`, for the file: if the file doesn't exist, `-v` creates an empty directory in its place
   (on Windows as well), and the connector fails with `IsADirectoryError`; `--mount` stops with an error.
-- The `connector-wal` volume keeps the write-ahead log (`zerobus.wal.enabled: true`) across container restarts.
+- The `connector-wal` volume keeps the write-ahead log (`zerobus.wal`, on in the example) across container restarts.
+- `--stop-timeout 30`: on `docker stop` the connector first publishes OFFLINE (a primary host's edges start
+  buffering), then writes what is queued, which can take up to ~20 s. Docker's default is 10 s, then SIGKILL; with
+  the write-ahead log the rows not written are sent after the next start, without it they are lost. In Compose:
+  `stop_grace_period: 30s`.
+- Logs go to the console only (`docker logs`; the image sets `CONNECTOR_LOG_FILES=false`): set a size limit in
+  Docker's logging options (e.g. `--log-opt max-size=50m --log-opt max-file=5`).
 - The web UI is on port 8001 (`web_ui.port`). Publish it on 127.0.0.1, or switch the login on
   (`web_ui.authentication`, a Databricks workspace's OAuth; the steps are in the source repository's README)
   before publishing it more widely.

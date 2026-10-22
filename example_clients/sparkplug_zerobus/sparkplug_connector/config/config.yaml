@@ -118,8 +118,8 @@ zerobus:
     client_id: '${env:DATABRICKS_CLIENT_ID}'
     client_secret: '${env:DATABRICKS_CLIENT_SECRET}'
   drain_timeout_seconds: 15        # on shutdown: how long the queued rows may take to be written
-  wal:                             # a write-ahead log per table (rows survive a crash)
-    enabled: false
+  wal:                             # a write-ahead log per table: rows survive a crash or a cut-short stop
+    enabled: true                  # (the Docker image: /app/wal, keep it on a volume)
     path: wal
     fsync_interval_seconds: 0.2
   batch:
