@@ -3,14 +3,15 @@
 #
 #   docker build -t sparkplug-zerobus --build-arg PIP_INDEX_URL=https://pypi.org/simple .
 #   docker run -d --stop-timeout 30 --env-file connector.env -p 127.0.0.1:8001:8001 \
-#     --mount type=bind,source="$PWD/my-config.yaml",target=/app/sparkplug_connector/config/config.yaml \
+#     --mount type=bind,source="$PWD/sparkplug_connector/config/config.yaml",target=/app/sparkplug_connector/config/config.yaml \
 #     --mount type=volume,source=connector-wal,target=/app/wal \
-#     sparkplug-zerobus --config /app/sparkplug_connector/config/config.yaml
+#     sparkplug-zerobus
 #
-# my-config.yaml: your copy of sparkplug_connector/config/config.yaml (source enabled, table set), mounted over
-# the example (--mount stops if the file is missing; -v would mount an empty directory). connector.env holds
-# the variables the config reads (README.md lists them). The write-ahead log (zerobus.wal) is in /app/wal. A stop can take
-# up to ~20 s (OFFLINE first, then the queued rows written): --stop-timeout 30, as Docker's default is 10 s.
+# sparkplug_connector/config/config.yaml, edited (source enabled, table set), is mounted over the image's copy so
+# the web page's saves land in it (--mount stops if the file is missing; -v would mount an empty directory).
+# connector.env holds the variables the config reads (README.md lists them). The write-ahead log (zerobus.wal) is
+# in /app/wal. A stop can take up to ~20 s (OFFLINE first, then the queued rows written): --stop-timeout 30, as
+# Docker's default is 10 s.
 # The container runs as uid 1000: on Linux the mounted config file must be writable by it for the web page's saves.
 FROM python:3.12-slim
 ARG PIP_INDEX_URL=https://pypi.org/simple

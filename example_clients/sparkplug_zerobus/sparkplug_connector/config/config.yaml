@@ -1,4 +1,4 @@
-# The connector's configuration. Copy it, then:
+# The connector's configuration (the default one: edit it in place), then:
 #   1. Set the environment variables it reads: ZEROBUS_ENDPOINT (<workspace-id>.zerobus.<region>.cloud.databricks.com),
 #      DATABRICKS_HOST (https://<workspace>.cloud.databricks.com), DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET
 #      (a service principal with USE CATALOG, USE SCHEMA, MODIFY and SELECT on the target table), and the MQTT
@@ -7,8 +7,8 @@
 #   2. Set zerobus.default_target to your sparkplug_raw table.
 #   3. Under sources:, set enabled: true on the example source (it is off), and primary_host_id if the connector
 #      is the edges' primary host; add more sources the same way (a source's target_table: a table of its own).
-# Run: python -m sparkplug_connector --config <your copy>. The web page's source and ZeroBus edits are saved
-# back into the file it was started with, placeholders kept.
+# Run: python -m sparkplug_connector (this file; --config <file> for another). The web page's source and ZeroBus
+# edits are saved back into the file it was started with, placeholders kept.
 bridge:
   autostart: true
 web_ui:

@@ -17,11 +17,11 @@ Sparkplug message** to a Delta table through Zerobus Ingest.
   each edge node and device online or offline and since when, and a rebirth request for an edge node.
 - **The Eclipse Sparkplug TCK's Host Application tests** pass as primary host, except where the connector does less
   than a full host application on purpose (no metric writes, no STALE marking); details in the connector's
-  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/03194a5/README.md#sparkplug-tck). Not a
+  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/9659c7a/README.md#sparkplug-tck). Not a
   certification.
 
 This folder is exported from [nickconnors/sparkplug-zerobus-connector](https://github.com/nickconnors/sparkplug-zerobus-connector)
-(commit [`03194a5`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/03194a5)). The tests and the
+(commit [`9659c7a`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/9659c7a)). The tests and the
 web UI's source code live there.
 
 ## What's here
@@ -71,7 +71,7 @@ GRANT MODIFY, SELECT ON TABLE bridge_stage_db.stage_db.sparkplug_raw TO `<applic
 ```
 
   The names are an example (any catalog, schema and table work). Column comments and sample queries:
-  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/03194a5/docs/UNITY_CATALOG_SCHEMAS.md);
+  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/9659c7a/docs/UNITY_CATALOG_SCHEMAS.md);
   the grants for the NBIRTH call: [sparkplug_connector/sparkplug/README.md](sparkplug_connector/sparkplug/README.md#databricks-setup).
 - The Zerobus endpoint: `<workspace-id>.zerobus.<region>.cloud.databricks.com`.
 - An MQTT user that may subscribe to `spBv1.0/#`, publish rebirth requests on `spBv1.0/+/NCMD/+` (unless
@@ -80,8 +80,9 @@ GRANT MODIFY, SELECT ON TABLE bridge_stage_db.stage_db.sparkplug_raw TO `<applic
 
 ## Configure it
 
-Copy [sparkplug_connector/config/config.yaml](sparkplug_connector/config/config.yaml) to `my-config.yaml`. It has one
-example source, `sparkplug-example`, switched off. In your copy:
+Edit [sparkplug_connector/config/config.yaml](sparkplug_connector/config/config.yaml), the connector's default
+configuration (or keep your own file anywhere and pass it with `--config`). It has one example source,
+`sparkplug-example`, switched off. In it:
 
 1. Set `zerobus.default_target` to your table.
 2. Set `enabled: true` on the source, and `primary_host_id` if the connector is the edges' primary host.
@@ -109,16 +110,18 @@ From this folder (`--build-arg PIP_INDEX_URL=<your index>` if pypi.org isn't rea
 docker build -t sparkplug-zerobus .
 docker run -d --name sparkplug-zerobus --restart unless-stopped --stop-timeout 30 --env-file connector.env \
   -p 127.0.0.1:8001:8001 \
-  --mount type=bind,source="$PWD/my-config.yaml",target=/app/sparkplug_connector/config/config.yaml \
+  --mount type=bind,source="$PWD/sparkplug_connector/config/config.yaml",target=/app/sparkplug_connector/config/config.yaml \
   --mount type=volume,source=connector-wal,target=/app/wal \
-  sparkplug-zerobus --config /app/sparkplug_connector/config/config.yaml
+  sparkplug-zerobus
 ```
 
 - `connector.env` holds the variables above; keep the secrets there (a client secret saved on the web page goes
   to an encrypted store in the container's home directory and is gone when the container is recreated).
-- Your file is mounted over the shipped example and passed with `--config`; edits made on the web page are saved
-  into it, so don't mount it read-only. The container runs as uid 1000: on Linux, make the file writable by it
-  (`sudo chown 1000 my-config.yaml`), or the page's saves fail.
+- The edited file is mounted over the image's copy of it; edits made on the web page are saved into it, so don't
+  mount it read-only. The container runs as uid 1000: on Linux, make the file writable by it
+  (`sudo chown 1000 sparkplug_connector/config/config.yaml`), or the page's saves fail.
+- It's a file the repository tracks: before pulling an update, commit or stash your edits (`git stash`, then
+  `git stash pop` after the pull).
 - Use `--mount`, not `-v`, for the file: if the file doesn't exist, `-v` creates an empty directory in its place
   (on Windows as well), and the connector fails with `IsADirectoryError`; `--mount` stops with an error.
 - The `connector-wal` volume keeps the write-ahead log (`zerobus.wal`, on in the example) across container restarts.
@@ -143,7 +146,7 @@ Databricks: `GET /api/sparkplug/health` does, per source (`state`, `rows_written
 ```
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m sparkplug_connector --config my-config.yaml
+.venv/bin/python -m sparkplug_connector
 ```
 
 ## Web UI
