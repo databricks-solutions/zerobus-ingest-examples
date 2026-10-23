@@ -1,10 +1,10 @@
 """
-Authentication module for Web UI using OAuth2/SAML/Client Certificates.
+Authentication module for Web UI: a Databricks workspace's OAuth, or client certificates.
 
 Supports:
-- OAuth2 authentication (Azure AD, Okta, Google, Databricks)
+- OAuth2 authentication with a Databricks workspace (the only provider; MFA is the workspace identity
+  provider's business: the connector can't see how a login was authenticated)
 - Client Certificate authentication (mutual TLS)
-- MFA verification from OAuth tokens
 - Session management with encrypted cookies
 - Login/logout flows
 """
@@ -17,13 +17,6 @@ from urllib.parse import urlencode, urlsplit
 from aiohttp import web
 from aiohttp_session import setup as setup_session, get_session, new_session
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
-try:
-    from authlib.integrations.aiohttp_client import OAuth
-except ImportError:
-    # authlib 1.6+ doesn't have aiohttp_client integration
-    # For testing purposes, we'll use a placeholder
-    # In production, consider using authlib.integrations.base_client
-    OAuth = None
 from cryptography import fernet
 
 # Import custom Databricks OAuth client
@@ -60,18 +53,20 @@ class AuthenticationManager:
         self.client_cert_config = config.get('client_cert', {})
 
         # OAuth2 settings
-        self.provider = self.oauth_config.get('provider', 'azure')
+        self.provider = self.oauth_config.get('provider', 'databricks')
         self.client_id = self._get_env_or_config('client_id')
         self.client_secret = self._get_env_or_config('client_secret')
         self.tenant_id = self._get_env_or_config('tenant_id', '')
         self.redirect_uri = self.oauth_config.get('redirect_uri', 'http://localhost:8082/login/callback')
         self.scopes = self.oauth_config.get('scopes', ['openid', 'email', 'profile'])
 
-        # MFA settings
-        self.require_mfa = config.get('require_mfa', False)
-        mfa_config = config.get('mfa', {})
-        self.mfa_claim_name = mfa_config.get('claim_name', 'amr')
-        self.mfa_required_methods = mfa_config.get('required_methods', ['mfa', 'otp', 'duo'])
+        if self.enabled and self.method == 'oauth2':
+            if self.provider != 'databricks':
+                raise ValueError(f"web_ui.authentication.oauth.provider: only 'databricks' (a Databricks workspace's "
+                                 f"OAuth) is supported, not {self.provider!r}")
+            if config.get('require_mfa'):
+                raise ValueError("web_ui.authentication.require_mfa: the connector can't see how a Databricks login "
+                                 "was authenticated; require MFA in the workspace's identity provider (single sign-on)")
 
         # Session settings
         self.session_secret = self._get_env_or_config('secret_key', key_path='session')
@@ -81,7 +76,7 @@ class AuthenticationManager:
         self.oauth = None
         self.oauth_client = None
 
-        logger.info(f"Authentication manager initialized: provider={self.provider}, mfa_required={self.require_mfa}")
+        logger.info(f"Authentication manager initialized: method={self.method}, provider={self.provider}")
 
     def _get_env_or_config(self, key: str, default: str = '', key_path: Optional[str] = None) -> str:
         """
@@ -152,82 +147,23 @@ class AuthenticationManager:
         storage = EncryptedCookieStorage(fernet_cipher, max_age=self.session_max_age)
         setup_session(app, storage)
 
-        # Handle Databricks provider with custom implementation
-        if self.provider == 'databricks':
-            workspace_host = self.oauth_config.get('workspace_host', '')
-            if not workspace_host:
-                raise ValueError("workspace_host required for Databricks OAuth")
-
-            self.oauth_client = DatabricksOAuthClient(
-                client_id=self.client_id,
-                client_secret=self.client_secret,
-                workspace_host=workspace_host,
-                redirect_uri=self.redirect_uri,
-                scopes=self.scopes
-            )
-            # Store auth manager in app
-            app['auth_manager'] = self
-            logger.info(f"✓ Databricks OAuth configured: workspace={workspace_host}")
+        app['auth_manager'] = self
+        if self.method != 'oauth2':           # client_cert: the role comes from the certificate, no OAuth
+            logger.info(f"✓ Authentication: {self.method}")
             return
 
-        # For other providers, check if OAuth is available
-        if OAuth is None:
-            logger.error("OAuth integration not available (authlib.integrations.aiohttp_client not found)")
-            logger.error("Authentication cannot be set up for non-Databricks providers.")
-            logger.error("Either use provider='databricks' or install authlib with aiohttp support.")
-            raise ImportError("authlib.integrations.aiohttp_client not available")
-
-        # Set up OAuth2
-        self.oauth = OAuth()
-
-        if self.provider == 'azure':
-            # Azure AD configuration
-            authority = f"https://login.microsoftonline.com/{self.tenant_id}" if self.tenant_id else "https://login.microsoftonline.com/common"
-            self.oauth.register(
-                name='azure',
-                client_id=self.client_id,
-                client_secret=self.client_secret,
-                server_metadata_url=f"{authority}/v2.0/.well-known/openid-configuration",
-                client_kwargs={
-                    'scope': ' '.join(self.scopes),
-                    'prompt': 'select_account'
-                }
-            )
-            self.oauth_client = self.oauth.azure
-            logger.info(f"OAuth2 configured for Azure AD: tenant={self.tenant_id}")
-
-        elif self.provider == 'okta':
-            # Okta configuration
-            okta_domain = self.oauth_config.get('okta_domain', '')
-            self.oauth.register(
-                name='okta',
-                client_id=self.client_id,
-                client_secret=self.client_secret,
-                server_metadata_url=f"https://{okta_domain}/.well-known/openid-configuration",
-                client_kwargs={'scope': ' '.join(self.scopes)}
-            )
-            self.oauth_client = self.oauth.okta
-            logger.info(f"OAuth2 configured for Okta: domain={okta_domain}")
-
-        elif self.provider == 'google':
-            # Google configuration
-            self.oauth.register(
-                name='google',
-                client_id=self.client_id,
-                client_secret=self.client_secret,
-                server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-                client_kwargs={'scope': ' '.join(self.scopes)}
-            )
-            self.oauth_client = self.oauth.google
-            logger.info("OAuth2 configured for Google")
-
-        else:
-            raise ValueError(f"Unsupported OAuth provider: {self.provider}")
-
-        # Store auth manager in app
-        app['auth_manager'] = self
-
-        logger.info("✓ Authentication setup complete")
+        # A Databricks workspace's OAuth (the only provider, checked in __init__)
+        workspace_host = self.oauth_config.get('workspace_host', '')
+        if not workspace_host:
+            raise ValueError("workspace_host required for Databricks OAuth")
+        self.oauth_client = DatabricksOAuthClient(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            workspace_host=workspace_host,
+            redirect_uri=self.redirect_uri,
+            scopes=self.scopes
+        )
+        logger.info(f"✓ Databricks OAuth configured: workspace={workspace_host}")
 
     async def handle_login(self, request: web.Request) -> web.Response:
         """
@@ -239,31 +175,27 @@ class AuthenticationManager:
         Returns:
             Redirect response to OAuth provider
         """
-        # For Databricks OAuth, use custom client
-        if self.provider == 'databricks':
-            # The session cookie must be set on the host the provider sends the user back to (the redirect URI's):
-            # a login started on another name of the same server (127.0.0.1 vs localhost) moves there first
-            callback = urlsplit(self.redirect_uri)
-            if callback.netloc and request.host != callback.netloc:
-                return web.HTTPFound(f"{callback.scheme}://{callback.netloc}/login")
+        if self.method != 'oauth2':
+            return web.Response(text="No OAuth login: web_ui.authentication.method is client_cert", status=404)
+        # The session cookie must be set on the host the provider sends the user back to (the redirect URI's):
+        # a login started on another name of the same server (127.0.0.1 vs localhost) moves there first
+        callback = urlsplit(self.redirect_uri)
+        if callback.netloc and request.host != callback.netloc:
+            return web.HTTPFound(f"{callback.scheme}://{callback.netloc}/login")
 
-            # Generate state for CSRF protection
-            state = generate_state()
+        # Generate state for CSRF protection
+        state = generate_state()
 
-            # Store state in session: the last few, so a second login (another tab, a retry) doesn't invalidate
-            # one still in progress
-            session = await get_session(request)
-            session['oauth_states'] = (list(session.get('oauth_states') or []) + [state])[-PENDING_LOGINS:]
+        # Store state in session: the last few, so a second login (another tab, a retry) doesn't invalidate
+        # one still in progress
+        session = await get_session(request)
+        session['oauth_states'] = (list(session.get('oauth_states') or []) + [state])[-PENDING_LOGINS:]
 
-            # Get authorization URL
-            auth_url = self.oauth_client.get_authorization_url(state)
-            logger.info(f"Redirecting to Databricks OAuth: {auth_url}")
+        # Get authorization URL
+        auth_url = self.oauth_client.get_authorization_url(state)
+        logger.info(f"Redirecting to Databricks OAuth: {auth_url}")
 
-            return web.HTTPFound(auth_url)
-
-        # For other providers (if OAuth available)
-        redirect_uri = self.redirect_uri
-        return await self.oauth_client.authorize_redirect(request, redirect_uri)
+        return web.HTTPFound(auth_url)
 
     async def handle_oauth_callback(self, request: web.Request) -> web.Response:
         """
@@ -276,69 +208,43 @@ class AuthenticationManager:
             Redirect to home page or error page
         """
         try:
-            # For Databricks OAuth
-            if self.provider == 'databricks':
-                # Get authorization code and state from query params
-                code = request.query.get('code')
-                state = request.query.get('state')
+            if self.method != 'oauth2':
+                return web.Response(text="No OAuth login: web_ui.authentication.method is client_cert", status=404)
+            # Get authorization code and state from query params
+            code = request.query.get('code')
+            state = request.query.get('state')
 
-                if not code:
-                    return web.Response(text="Missing authorization code", status=400)
+            if not code:
+                return web.Response(text="Missing authorization code", status=400)
 
-                # Verify state (CSRF protection): one this browser's session started, used once
-                session = await get_session(request)
-                pending = list(session.get('oauth_states') or [])
-                if not state or state not in pending:
-                    logger.warning(f"OAuth state mismatch: {len(pending)} pending in this session, got={state}")
-                    return web.Response(text="Invalid OAuth state (CSRF check failed)", status=403)
-                pending.remove(state)
-                session['oauth_states'] = pending
+            # Verify state (CSRF protection): one this browser's session started, used once
+            session = await get_session(request)
+            pending = list(session.get('oauth_states') or [])
+            if not state or state not in pending:
+                logger.warning(f"OAuth state mismatch: {len(pending)} pending in this session, got={state}")
+                return web.Response(text="Invalid OAuth state (CSRF check failed)", status=403)
+            pending.remove(state)
+            session['oauth_states'] = pending
 
-                # Exchange code for token
-                token_data = await self.oauth_client.exchange_code_for_token(code)
-                if not token_data:
-                    return web.Response(text="Failed to exchange authorization code", status=500)
+            # Exchange code for token
+            token_data = await self.oauth_client.exchange_code_for_token(code)
+            if not token_data:
+                return web.Response(text="Failed to exchange authorization code", status=500)
 
-                access_token = token_data.get('access_token')
+            access_token = token_data.get('access_token')
 
-                # Get user info (the workspace checks the token)
-                userinfo = await self.oauth_client.get_user_info(access_token)
-                if not userinfo:
-                    return web.Response(text="Failed to get user information", status=500)
+            # Get user info (the workspace checks the token)
+            userinfo = await self.oauth_client.get_user_info(access_token)
+            if not userinfo:
+                return web.Response(text="Failed to get user information", status=500)
 
-                user_email = userinfo.get('email') or userinfo.get('preferred_username') or userinfo.get('sub')
-                user_name = userinfo.get('name', user_email)
-                user_groups = userinfo.get('groups', [])
-
-            else:
-                # For other providers (if OAuth available)
-                # Exchange authorization code for token
-                token = await self.oauth_client.authorize_access_token(request)
-
-                # Parse user info from token
-                userinfo = token.get('userinfo')
-                if not userinfo:
-                    # Fetch userinfo if not in token
-                    userinfo = await self.oauth_client.userinfo(token=token)
-
-                user_email = userinfo.get('email') or userinfo.get('preferred_username') or userinfo.get('upn')
-                user_name = userinfo.get('name', user_email)
-                user_groups = userinfo.get('groups', [])
+            user_email = userinfo.get('email') or userinfo.get('preferred_username') or userinfo.get('sub')
+            user_name = userinfo.get('name', user_email)
+            user_groups = userinfo.get('groups', [])
 
             if not user_email:
                 logger.error("No email in OAuth token")
                 return web.Response(text="Authentication failed: No email in token", status=403)
-
-            # Check MFA if required
-            if self.require_mfa:
-                mfa_satisfied = self.check_mfa_status(token)
-                if not mfa_satisfied:
-                    logger.warning(f"MFA not satisfied for user {user_email}")
-                    return web.Response(
-                        text="Multi-factor authentication required. Please enable MFA and try again.",
-                        status=403
-                    )
-                logger.info(f"User {user_email} authenticated with MFA")
 
             # Create user object with role (RBAC will be implemented separately)
             from sparkplug_connector.web.rbac import User
@@ -357,7 +263,6 @@ class AuthenticationManager:
                 'name': user.name,
                 'groups': user.groups,
                 'role': user.role.value,
-                'mfa_completed': self.require_mfa
             }
 
             logger.info(f"User {user_email} logged in successfully (role={user.role.value})")
@@ -413,32 +318,6 @@ class AuthenticationManager:
             'authenticated': True,
             'user': user_data
         })
-
-    def check_mfa_status(self, token: Dict[str, Any]) -> bool:
-        """
-        Check if user completed MFA based on OAuth token claims.
-
-        Args:
-            token: OAuth token with claims
-
-        Returns:
-            True if MFA satisfied, False otherwise
-        """
-        # Check for MFA claim in token
-        # Azure AD uses 'amr' (Authentication Methods Reference)
-        amr = token.get(self.mfa_claim_name, [])
-
-        if not isinstance(amr, list):
-            amr = [amr]
-
-        # Check if any required MFA method is present
-        for method in self.mfa_required_methods:
-            if method in amr:
-                logger.debug(f"MFA satisfied with method: {method}")
-                return True
-
-        logger.debug(f"MFA not satisfied. Available methods: {amr}, required: {self.mfa_required_methods}")
-        return False
 
 
 @web.middleware

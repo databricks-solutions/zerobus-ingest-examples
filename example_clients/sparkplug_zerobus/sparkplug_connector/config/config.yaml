@@ -18,9 +18,8 @@ web_ui:
   authentication:                  # login to the web page, off by default
     enabled: false
     method: oauth2                 # oauth2 (a Databricks workspace's OAuth) or client_cert (needs tls)
-    require_mfa: false
     oauth:
-      provider: databricks
+      provider: databricks         # the only provider (MFA: the workspace's identity provider)
       client_id: ''
       client_secret: ''
       workspace_host: '${env:DATABRICKS_HOST:}'

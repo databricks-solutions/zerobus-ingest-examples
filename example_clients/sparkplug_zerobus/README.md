@@ -17,11 +17,11 @@ Sparkplug message** to a Delta table through Zerobus Ingest.
   each edge node and device online or offline and since when, and a rebirth request for an edge node.
 - **The Eclipse Sparkplug TCK's Host Application tests** pass as primary host, except where the connector does less
   than a full host application on purpose (no metric writes, no STALE marking); details in the connector's
-  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/9f39914/README.md#sparkplug-tck). Not a
+  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/03194a5/README.md#sparkplug-tck). Not a
   certification.
 
 This folder is exported from [nickconnors/sparkplug-zerobus-connector](https://github.com/nickconnors/sparkplug-zerobus-connector)
-(commit [`9f39914`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/9f39914)), which keeps the
+(commit [`03194a5`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/03194a5)), which keeps the
 Sparkplug B path of [pravinva/unified-ot-zerobus-connector](https://github.com/pravinva/unified-ot-zerobus-connector)
 (see [Unified OT Zerobus](../unified_ot_zerobus/) for its multi-protocol version). The tests and the web UI's source
 code live there.
@@ -73,7 +73,7 @@ GRANT MODIFY, SELECT ON TABLE bridge_stage_db.stage_db.sparkplug_raw TO `<applic
 ```
 
   The names are an example (any catalog, schema and table work). Column comments and sample queries:
-  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/9f39914/docs/UNITY_CATALOG_SCHEMAS.md);
+  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/03194a5/docs/UNITY_CATALOG_SCHEMAS.md);
   the grants for the NBIRTH call: [sparkplug_connector/sparkplug/README.md](sparkplug_connector/sparkplug/README.md#databricks-setup).
 - The Zerobus endpoint: `<workspace-id>.zerobus.<region>.cloud.databricks.com`.
 - An MQTT user that may subscribe to `spBv1.0/#`, publish rebirth requests on `spBv1.0/+/NCMD/+` (unless
