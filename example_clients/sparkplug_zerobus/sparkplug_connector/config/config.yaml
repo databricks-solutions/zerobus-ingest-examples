@@ -98,6 +98,12 @@ sources:
   state_format: v3
   offline_after_seconds: 30
   online_after_seconds: 30
+  # Rows and rebirth requests (sparkplug_connector/sparkplug/README.md):
+  sequence_handling: strict        # strict: messages in seq order, an edge node's dropped after a gap until its
+                                   # rebirth; keep_all: a row for every message
+  sequence_reordering_timeout: 5000  # ms to wait for a missing seq
+  block_auto_rebirth: false        # false: rebirth requests (NCMD), the MQTT user needs publish on spBv1.0/+/NCMD/+;
+                                   # true (no requests) only with keep_all
   edge_node_schemas:
     enabled: false
     warehouse_id: ''

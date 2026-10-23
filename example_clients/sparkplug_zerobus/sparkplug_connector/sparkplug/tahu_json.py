@@ -15,7 +15,11 @@
 This is the JSON the connector writes to ``sparkplug_raw.msg``. Tahu's behaviour is copied as is, including its quirks
 (each marked ``Tahu quirk``); the one deliberate difference is marked ``Deviation``.
 
-    to_tahu_json(payload: bytes) -> str     # raises on a payload Tahu can't decode or serialize
+    to_tahu_json(payload: bytes, types=None) -> str     # raises on a payload Tahu can't decode or serialize
+
+``types`` (``MetricTypes``, Tahu's ``MetricDataTypeMap``) are the data types the edge node's births gave its metrics,
+as a Tahu host application keeps them: a metric sent without a datatype (allowed outside births) decodes
+with its type from there; without them it decodes to null. ``decode``, ``decompress`` and ``dumps`` are the steps.
 """
 from __future__ import annotations
 
@@ -37,7 +41,8 @@ from sparkplug_connector.sparkplug.java_format import (
     json_string,
 )
 
-__all__ = ["to_tahu_json", "TahuDecodeError", "UUID_COMPRESSED"]
+__all__ = ["to_tahu_json", "decode", "decompress", "dumps", "untyped", "MetricTypes", "TahuDecodeError", "UUID_COMPRESSED",
+           "METRIC_TYPE_CODES"]
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +69,20 @@ _METRIC_NAMES = {**_SCALAR_NAMES, 15: "UUID", 16: "DataSet", 17: "Bytes", 18: "F
                  27: "UInt16Array", 28: "UInt32Array", 29: "UInt64Array", 30: "FloatArray", 31: "DoubleArray",
                  32: "BooleanArray", 33: "StringArray", 34: "DateTimeArray"}
 _PROPERTY_NAMES = {**_SCALAR_NAMES, 20: "PropertySet", 21: "PropertySetList"}
+METRIC_TYPE_CODES = {name: code for code, name in _METRIC_NAMES.items()}
+
+
+class MetricTypes:
+    """Tahu's ``MetricDataTypeMap``: metric data type codes by name and by alias (``names``, ``aliases``)."""
+    __slots__ = ("names", "aliases")
+
+    def __init__(self) -> None:
+        self.names: dict[str, int] = {}
+        self.aliases: dict[int, int] = {}
+
+    @property
+    def empty(self) -> bool:
+        return not self.names and not self.aliases
 
 
 # ----------------------------------------------------------------------------- Java values
@@ -125,8 +144,8 @@ def _s64(v: int) -> int:
 
 # ----------------------------------------------------------------------------- decoding
 
-def _decode_payload(raw: bytes) -> dict[str, Any]:
-    """SparkplugBPayloadDecoder.buildFromByteArray (no MetricDataTypeMap); keys in Jackson's order."""
+def _decode_payload(raw: bytes, types: MetricTypes | None = None) -> dict[str, Any]:
+    """SparkplugBPayloadDecoder.buildFromByteArray(raw, types); keys in Jackson's order."""
     try:
         payload = pb.Payload.FromString(raw)
     except DecodeError as e:
@@ -137,7 +156,7 @@ def _decode_payload(raw: bytes) -> dict[str, Any]:
     metrics = []
     for metric in payload.metrics:
         try:
-            metrics.append(_metric(metric))
+            metrics.append(_metric(metric, types))
         except Exception as e:  # noqa: BLE001 - Tahu quirk: a metric that fails to decode is left out, the rest is kept
             logger.warning("Failed to handle metric name=%s with alias=%s - excluding from decoded payload: %s",
                            _utf8(metric.name), metric.alias, e)
@@ -151,14 +170,29 @@ def _decode_payload(raw: bytes) -> dict[str, Any]:
     return out
 
 
-def _metric(m: pb.Payload.Metric) -> dict[str, Any] | None:
+def _metric(m: pb.Payload.Metric, types: MetricTypes | None = None, prefix: str = "") -> dict[str, Any] | None:
+    """SparkplugBPayloadDecoder.convertMetric; ``prefix``: a template member's ``<template name>/``."""
     type_code = _s32(m.datatype)
     type_name = _METRIC_NAMES.get(type_code)
     if type_name is None:
-        # Tahu quirk: an unknown data type (0, 20, 21, ...) decodes to null, kept as null in the list
-        logger.error("Failed to decode the payload on metric datatype: %s", _utf8(m.name))
-        return None
-    value = _metric_value(m, type_code)
+        if types is None or types.empty:
+            # Tahu quirk: an unknown data type (0, 20, 21, ...) decodes to null, kept as null in the list
+            logger.error("Failed to decode the payload on metric datatype: %s", _utf8(m.name))
+            return None
+        if m.HasField("name"):
+            found = types.names.get(prefix + _utf8(m.name))
+        elif m.HasField("alias"):
+            found = types.aliases.get(_s64(m.alias))
+        else:
+            logger.error("Failed to decode the payload on metric: alias and name missing")
+            return None
+        if found is None:
+            # Tahu quirk: a type not in the map fails the metric (a NullPointerException in Metric's checkType)
+            raise TahuDecodeError(f"no data type for metric {_utf8(m.name)!r} in the births' types")
+        type_name = _METRIC_NAMES[found]
+        if type_code == 0:                          # getMetricValue takes the map's type for datatype 0 only
+            type_code = found
+    value = _metric_value(m, type_code, types, prefix)
     out: dict[str, Any] = {}
     if m.HasField("name"):
         out["name"] = _utf8(m.name)
@@ -195,7 +229,7 @@ def _metadata(md: pb.Payload.MetaData) -> dict[str, Any]:
     }
 
 
-def _metric_value(m: pb.Payload.Metric, t: int) -> Any:
+def _metric_value(m: pb.Payload.Metric, t: int, types: MetricTypes | None = None, prefix: str = "") -> Any:
     """SparkplugBPayloadDecoder.getMetricValue: unset values read as protobuf defaults (0, "", false)."""
     if m.is_null:
         return None
@@ -236,16 +270,16 @@ def _metric_value(m: pb.Payload.Metric, t: int) -> Any:
     if t == 16:
         return _dataset(m.dataset_value)
     if t == 19:
-        return _template(m.template_value)
+        return _template(m.template_value, types, prefix + _utf8(m.name) + "/")
     if 22 <= t <= 34:
         return _array(t, m.bytes_value)
     raise TahuDecodeError(f"Failed to decode: Unknown MetricDataType {t}")
 
 
-def _template(t: pb.Payload.Template) -> dict[str, Any]:
+def _template(t: pb.Payload.Template, types: MetricTypes | None = None, prefix: str = "") -> dict[str, Any]:
     parameters = [_parameter(p) for p in t.parameters]
     # Tahu quirk: a member that fails to decode fails the whole template metric (no catch here)
-    metrics = [_metric(m) for m in t.metrics]
+    metrics = [_metric(m, types, prefix) for m in t.metrics]
     out: dict[str, Any] = {
         "version": _utf8(t.version),                       # Tahu quirk: "" when unset (read without has-check)
         "reference": _utf8(t.template_ref),
@@ -468,8 +502,9 @@ def _string_array(data: bytes) -> list[str]:
 
 # ----------------------------------------------------------------------------- decompression
 
-def _decompress(payload: dict[str, Any]) -> dict[str, Any]:
-    """PayloadUtil.decompress: the body, compressed with the "algorithm" metric's method (DEFLATE by default)."""
+def _decompress(payload: dict[str, Any], types: MetricTypes | None = None) -> dict[str, Any]:
+    """PayloadUtil.decompress: the body, compressed with the "algorithm" metric's method (DEFLATE by default),
+    decoded with the same types."""
     algorithm = "DEFLATE"
     for metric in payload["metrics"]:
         if metric is None or "name" not in metric:
@@ -482,7 +517,7 @@ def _decompress(payload: dict[str, Any]) -> dict[str, Any]:
     body = payload.get("body")
     if body is None:
         raise TahuDecodeError("NullPointerException: compressed payload without a body")
-    return _decode_payload(_gunzip(body.value) if algorithm == "GZIP" else _inflate(body.value))
+    return _decode_payload(_gunzip(body.value) if algorithm == "GZIP" else _inflate(body.value), types)
 
 
 def _too_large(size: int) -> None:
@@ -575,11 +610,32 @@ def _write_object(items, out: list[str]) -> None:
     out.append("}")
 
 
-def to_tahu_json(payload: bytes) -> str:
-    """The JSON Tahu writes for a Sparkplug B payload (decompressed first if compressed)."""
-    decoded = _decode_payload(payload)
-    if decoded.get("uuid") == UUID_COMPRESSED:
-        decoded = _decompress(decoded)
+def decode(payload: bytes, types: MetricTypes | None = None) -> dict[str, Any]:
+    """The payload as Tahu decodes it (``SparkplugBPayloadDecoder.buildFromByteArray``), not decompressed: what a
+    Tahu host application's checks read (``seq``, timestamp, ``bdSeq``, a birth's metrics)."""
+    return _decode_payload(payload, types)
+
+
+def decompress(decoded: dict[str, Any], types: MetricTypes | None = None) -> dict[str, Any]:
+    """``PayloadUtil.decompress``: a compressed payload's inner payload, else the payload itself."""
+    return _decompress(decoded, types) if decoded.get("uuid") == UUID_COMPRESSED else decoded
+
+
+def dumps(decoded: dict[str, Any]) -> str:
+    """Tahu's JSON of a decoded payload (``PayloadUtil.toJsonString``)."""
     out: list[str] = []
     _write(decoded, out)
     return "".join(out)
+
+
+def untyped(decoded: dict[str, Any]) -> bool:
+    """Whether a metric, or a template's member, decoded to null: a datatype only a birth's types can give."""
+    def walk(metrics: list) -> bool:
+        return any(m is None or (m.get("dataType") == "Template" and isinstance(m.get("value"), dict)
+                                 and walk(m["value"]["metrics"])) for m in metrics)
+    return walk(decoded["metrics"])
+
+
+def to_tahu_json(payload: bytes, types: MetricTypes | None = None) -> str:
+    """The JSON Tahu writes for a Sparkplug B payload (decompressed first if compressed)."""
+    return dumps(decompress(decode(payload, types), types))

@@ -558,6 +558,11 @@ class Bridge:
                 pass
             self.client_tasks.pop(source_name, None)
 
+        if client is not None:
+            try:
+                await client.close()
+            except Exception as e:
+                logger.warning(f"Error closing source {source_name}: {e}")
         self.clients.pop(source_name, None)
         return {'status': 'ok', 'message': f"Source stopped: {source_name}"}
 
@@ -641,6 +646,11 @@ class Bridge:
             for task in pending:
                 task.cancel()
             await asyncio.gather(*self.client_tasks.values(), return_exceptions=True)
+        for source_name, client in self.clients.items():
+            try:
+                await client.close()
+            except Exception as e:
+                logger.error(f"Error closing {source_name}: {e}")
 
         # Writers: write what is queued (up to drain_timeout_seconds), then stop
         for writer in self.writers.values():
@@ -679,6 +689,17 @@ class Bridge:
                 'messages_skipped': sum(v for k, v in s.items() if k.startswith('skipped_')),
                 'topics_malformed': s['skipped_malformed_topic'], 'payloads_undecodable': s['skipped_undecodable_payload'],
                 'state_republished': s['state_republished'], 'rows_failed': s['rows_failed'],
+                # rows and rebirth requests (sparkplug/sequencer.py); keep_all: the drops are only counted
+                'sequence_handling': s['sequence_handling'], 'messages_held': s['messages_held'],
+                'messages_reordered': s['messages_reordered'], 'messages_dropped': s['messages_dropped'],
+                'dropped': {k.removeprefix('dropped_'): v for k, v in s.items() if k.startswith('dropped_') and v},
+                'rebirth_requests': s['rebirth_requests'], 'rebirth_requests_sent': s['rebirth_requests_sent'],
+                'rebirth_requests_rate_limited': s['rebirth_requests_rate_limited'],
+                'rebirth_requests_blocked': s['rebirth_requests_blocked'],
+                'rebirth_requests_failed': s['rebirth_requests_failed'],
+                'rebirth_requests_not_sent_refused': s['rebirth_requests_not_sent_refused'],
+                'rebirth_refused': s['rebirth_refused'], 'block_auto_rebirth': s['block_auto_rebirth'],
+                'duplicate_aliases': s['duplicate_aliases'], 'sequence_errors': s['sequence_errors'],
             }
             writer = self.writers.get(self._get_target_for_source(name))
             if writer is not None:

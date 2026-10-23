@@ -293,7 +293,8 @@ def validate_source_config(config: Dict[str, Any]) -> Dict[str, Any]:
     # Validate optional fields
     # (sparkplug/README.md); the username, password, topics and TLS settings stay in the config file
     optional_fields = ['enabled', 'target_table', 'client_id', 'primary_host_id', 'state_format',
-                       'offline_after_seconds', 'online_after_seconds', 'edge_node_schemas']
+                       'offline_after_seconds', 'online_after_seconds', 'edge_node_schemas',
+                       'sequence_handling', 'sequence_reordering_timeout', 'block_auto_rebirth']
 
     for field in optional_fields:
         if field in config:
@@ -332,6 +333,25 @@ def validate_source_config(config: Dict[str, Any]) -> Dict[str, Any]:
             seconds = -1.0
         if not seconds >= 0:
             raise ValidationError(f"{field}: a number of seconds, 0 or more (not {value!r})")
+
+    # Rows and rebirth requests (sparkplug/sequencer.py)
+    handling = str(validated.get('sequence_handling') or '').strip().lower()
+    if handling and handling not in ('strict', 'keep_all'):
+        raise ValidationError(f"Sequence handling: strict or keep_all, not {validated['sequence_handling']!r}")
+    timeout = validated.get('sequence_reordering_timeout')
+    if timeout is not None and timeout != '':
+        try:
+            ms = int(str(timeout).strip())
+        except ValueError:
+            ms = 0
+        if ms <= 0:
+            raise ValidationError(f"sequence_reordering_timeout: a number of milliseconds, more than 0 (not {timeout!r})")
+        validated['sequence_reordering_timeout'] = ms
+    if 'block_auto_rebirth' in validated and not isinstance(validated['block_auto_rebirth'], bool):
+        raise ValidationError(f"block_auto_rebirth: true or false, not {validated['block_auto_rebirth']!r}")
+    if validated.get('block_auto_rebirth') is True and handling in ('', 'strict'):
+        raise ValidationError("Block auto rebirth needs Rows: keep_all (strict drops an edge node's messages after a "
+                              "gap until its rebirth)")
 
     # Log validation success
     logger.info(

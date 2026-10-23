@@ -14,7 +14,7 @@ import enum
 import uuid
 from dataclasses import dataclass
 
-from sparkplug_connector.sparkplug.tahu_json import to_tahu_json
+from sparkplug_connector.sparkplug import tahu_json
 
 NAMESPACE = "spBv1.0"
 NODE_TYPES = frozenset({"NBIRTH", "NDEATH", "NDATA", "NCMD"})
@@ -109,10 +109,16 @@ class RawRow:
 
 @dataclass(frozen=True)
 class Outcome:
-    """A row, or why there is none (``detail``: the topic or decode error, for the log)."""
+    """A row, or why there is none (``detail``: the topic or decode error, for the log). With a row also what
+    the sequencer reads: the topic, the payload, and the payload as Tahu decodes it (``decoded``) and decompressed
+    (``full``, the row's JSON; the same object when not compressed)."""
     row: RawRow | None = None
     skip: Skip | None = None
     detail: str | None = None
+    topic: SparkplugTopic | None = None
+    payload: bytes | None = None
+    decoded: dict | None = None
+    full: dict | None = None
 
 
 def convert(topic: str, payload: bytes, received_at_ms: int) -> Outcome:
@@ -126,10 +132,12 @@ def convert(topic: str, payload: bytes, received_at_ms: int) -> Outcome:
     if parsed.message_type in COMMANDS:
         return Outcome(skip=Skip.COMMAND)
     try:
-        msg = to_tahu_json(payload)
+        decoded = tahu_json.decode(payload)
+        full = tahu_json.decompress(decoded)
+        msg = tahu_json.dumps(full)
     except Exception as e:  # noqa: BLE001 - one bad payload never stops the source
         return Outcome(skip=Skip.UNDECODABLE_PAYLOAD, detail=f"{e}, {len(payload)} bytes")
     return Outcome(row=RawRow(
         msg_id=str(uuid.uuid4()), msg_topic=topic, namespace=NAMESPACE, group_id=parsed.group_id,
         message_type=parsed.message_type, edge_node_id=parsed.edge_node_id, device_id=parsed.device_id,
-        msg=msg, inserted_at=received_at_ms))
+        msg=msg, inserted_at=received_at_ms), topic=parsed, payload=payload, decoded=decoded, full=full)

@@ -10,6 +10,13 @@ subscribes, then publishes ONLINE with the same T; a live OFFLINE for its own ho
 ONLINE again. The bridge's ``HostSupervisor`` opens ``online_allowed`` only while Databricks accepts the
 rows; ``connect()`` waits for it, and ``go_offline()`` publishes OFFLINE and disconnects.
 Without ``primary_host_id`` it is a plain subscriber (not a primary host).
+
+In both modes, rows and rebirth requests follow Eclipse Tahu's host decisions (``sparkplug/sequencer.py``):
+``sequence_handling`` (``strict``: messages in ``seq`` order, an edge node's dropped after a gap until its rebirth;
+``keep_all``: every message), ``sequence_reordering_timeout`` (ms) and ``block_auto_rebirth`` (only with
+``keep_all``: strict needs the rebirths). A rebirth request is an NCMD on ``spBv1.0/<group>/NCMD/<edge node>`` (the
+MQTT user needs publish rights there); if the server closes the connection right after one twice in a row (Chariot's
+answer to a refused publish), the source sends no more until it restarts and writes every message (``keep_all``).
 """
 from __future__ import annotations
 
@@ -25,6 +32,8 @@ from sparkplug_connector.protocols.base import ProtocolClient, ProtocolType
 from sparkplug_connector.protocols.mqtt_security import MQTTSecurityManager, create_security_config_from_dict
 from sparkplug_connector.sparkplug.host import V2, V3, is_online_state, state_payload, state_topic
 from sparkplug_connector.sparkplug.raw_row import Outcome, RawRow, Skip, convert
+from sparkplug_connector.sparkplug.sequencer import (DEFAULT_REORDER_TIMEOUT_MS, KEEP_ALL, STRICT, TICK_S, Sequencer,
+                                                     rebirth_payload, rebirth_topic)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +41,8 @@ DEFAULT_TOPICS = ["spBv1.0/#"]
 DISCONNECT_TIMEOUT_S = 5.0
 STATE_PUBLISH_TIMEOUT_S = 5.0
 CONNECT_TIMEOUT_S = 10.0
+REFUSED_WITHIN_S = 2.0          # a connection lost this soon after an NCMD counts as a refusal of it
+REFUSALS_TO_STOP = 2            # in a row (an NCMD the connection outlives starts the count again)
 
 
 class SparkplugClient(ProtocolClient):
@@ -76,6 +87,21 @@ class SparkplugClient(ProtocolClient):
         self._state_tasks: set[asyncio.Task] = set()
         self._state_lock = asyncio.Lock()             # STATE publishes in order: no ONLINE after an OFFLINE
 
+        self.block_auto_rebirth = _flag(config.get("block_auto_rebirth", False))
+        self.sequence_handling = str(config.get("sequence_handling") or STRICT).lower()
+        timeout = config.get("sequence_reordering_timeout")
+        timeout_ms = DEFAULT_REORDER_TIMEOUT_MS if timeout is None or str(timeout).strip() == "" else int(str(timeout).strip())
+        self.sequencer = Sequencer(self.sequence_handling, timeout_ms, self.block_auto_rebirth, self._request_rebirth,
+                                   source_name)
+        if self.block_auto_rebirth and self.sequence_handling == STRICT:
+            raise ValueError("block_auto_rebirth: true needs sequence_handling: keep_all (strict drops an edge node's "
+                             "messages after a gap until its rebirth, which it then never asks for)")
+        self._ticker: asyncio.Task | None = None      # the reorder timeouts, for the source's life (across reconnects)
+        self._closing = False                         # our own disconnect: not a refused NCMD
+        self._ncmd_at: float | None = None            # when the last NCMD went out on this connection
+        self._refusals = 0                            # connections lost right after an NCMD, in a row
+        self.rebirth_refused = False                  # the server refused NCMDs: none sent until the source restarts
+
     @property
     def protocol_type(self) -> ProtocolType:
         return ProtocolType.SPARKPLUG
@@ -111,6 +137,8 @@ class SparkplugClient(ProtocolClient):
         await client.__aenter__()
         self._client = client
         self.session_timestamp = t
+        self._closing = False
+        self._ncmd_at = None
 
     async def subscribe(self) -> None:
         if self._client is None:
@@ -133,6 +161,8 @@ class SparkplugClient(ProtocolClient):
         else:
             logger.info("[%s] subscribed to %s", self.source_name, self.topics)
         self.subscribed.set()
+        if self._ticker is None or self._ticker.done():
+            self._ticker = asyncio.get_running_loop().create_task(self._tick())
         try:
             async for message in self._client.messages:
                 topic, payload = message.topic.value, _payload_bytes(message.payload)
@@ -141,6 +171,9 @@ class SparkplugClient(ProtocolClient):
                     self._on_own_state(payload, bool(getattr(message, "retain", False)))
                     continue
                 self.handle_message(topic, payload, int(time.time() * 1000))
+        except aiomqtt.MqttError:
+            self._connection_lost()
+            raise
         finally:
             self.subscribed.clear()
             self.online = False
@@ -170,6 +203,7 @@ class SparkplugClient(ProtocolClient):
 
     async def go_offline(self) -> None:
         """Publish OFFLINE (now) and disconnect; ONLINE again only on a new connection (new will)."""
+        self._closing = True
         async with self._state_lock:
             was_online, self.online = self.online, False
             client = self._client
@@ -185,16 +219,19 @@ class SparkplugClient(ProtocolClient):
             logger.info("[%s] OFFLINE: published OFFLINE STATE and disconnected", self.source_name)
 
     def handle_message(self, topic: str, payload: bytes, received_at_ms: int) -> Outcome:
-        """One MQTT message: a row for the bridge, or a counted skip."""
+        """One MQTT message: rows for the bridge (the sequencer's: this one, held ones it releases, or none), or a
+        counted skip."""
         self.counters["messages_received"] += 1
         outcome = convert(topic, payload, received_at_ms)
         if outcome.row is not None:
             try:
-                self.on_record(outcome.row)
-                self.counters["rows"] += 1
-            except Exception as e:  # noqa: BLE001 - one row mustn't end the subscription (a primary host OFFLINE)
-                self.counters["rows_failed"] += 1
-                logger.error("[%s] row not queued (%s): %s: %s", self.source_name, topic, type(e).__name__, e)
+                rows = self.sequencer.on_message(outcome, time.monotonic())
+            except Exception as e:  # noqa: BLE001 - mustn't end the subscription either: the message keeps its row
+                self.counters["sequence_errors"] += 1
+                logger.error("[%s] sequencing failed (%s), row written as received: %s: %s", self.source_name, topic,
+                             type(e).__name__, e, exc_info=self.counters["sequence_errors"] == 1)
+                rows = [outcome.row]
+            self._emit(rows)
         else:
             self.counters[f"skipped_{outcome.skip.value}"] += 1
             if outcome.skip in (Skip.MALFORMED_TOPIC, Skip.UNDECODABLE_PAYLOAD):
@@ -203,19 +240,99 @@ class SparkplugClient(ProtocolClient):
             self._emit_stats(self.stats())
         return outcome
 
-    def stats(self) -> dict[str, int]:
-        """Messages received, rows handed on, skipped messages by reason, ONLINE re-published."""
+    def _emit(self, rows: list[RawRow]) -> None:
+        for row in rows:
+            try:
+                self.on_record(row)
+                self.counters["rows"] += 1
+            except Exception as e:  # noqa: BLE001 - one row mustn't end the subscription (a primary host OFFLINE)
+                self.counters["rows_failed"] += 1
+                logger.error("[%s] row not queued (%s): %s: %s", self.source_name, row.msg_topic, type(e).__name__, e)
+
+    def stats(self) -> dict[str, Any]:
+        """Messages received, rows handed on, skipped messages by reason, ONLINE re-published, the sequencer's
+        counters and the rebirth requests sent."""
         return {
             "messages_received": self.counters["messages_received"],
             "rows": self.counters["rows"],
             "rows_failed": self.counters["rows_failed"],
             **{f"skipped_{s.value}": self.counters[f"skipped_{s.value}"] for s in Skip},
             "state_republished": self.counters["state_republished"],
+            **self.sequencer.stats(),
+            "sequence_errors": self.counters["sequence_errors"],
+            "block_auto_rebirth": self.block_auto_rebirth,
+            "rebirth_requests_sent": self.counters["rebirth_requests_sent"],
+            "rebirth_requests_failed": self.counters["rebirth_requests_failed"],
+            "rebirth_refused": self.rebirth_refused,
+            "rebirth_requests_not_sent_refused": self.counters["rebirth_requests_not_sent_refused"],
         }
+
+    # ------------------------------------------------------------------ rebirth requests
+
+    def _request_rebirth(self, group_id: str, edge_node_id: str) -> None:
+        """The sequencer asks an edge node for a rebirth: an NCMD (QoS 0, not retained)."""
+        topic = rebirth_topic(group_id, edge_node_id)
+        if self.rebirth_refused:
+            self.counters["rebirth_requests_not_sent_refused"] += 1
+            return
+        client = self._client
+        if client is None or not self.subscribed.is_set():
+            self.counters["rebirth_requests_failed"] += 1
+            logger.warning("[%s] rebirth request on %s not sent: not connected", self.source_name, topic)
+            return
+        task = asyncio.get_running_loop().create_task(self._send_rebirth(client, topic))
+        self._state_tasks.add(task)
+        task.add_done_callback(self._state_tasks.discard)
+
+    async def _send_rebirth(self, client: aiomqtt.Client, topic: str) -> None:
+        self._ncmd_at = time.monotonic()
+        try:
+            await asyncio.wait_for(client.publish(topic, rebirth_payload(int(time.time() * 1000)), qos=0, retain=False),
+                                   STATE_PUBLISH_TIMEOUT_S)
+            self.counters["rebirth_requests_sent"] += 1
+            logger.info("[%s] rebirth requested: NCMD on %s", self.source_name, topic)
+        except Exception as e:  # noqa: BLE001 - the connection may be going away
+            self.counters["rebirth_requests_failed"] += 1
+            logger.warning("[%s] rebirth request on %s not sent: %s", self.source_name, topic, e)
+
+    def _connection_lost(self) -> None:
+        """The connection is lost. Right after an NCMD, twice in a row, the server refused them (Chariot closes the
+        connection on a publish the ACL refuses; messages it had already sent may still arrive in between): no more
+        NCMDs, or every gap would cost a reconnect, and ``keep_all``, since strict without rebirths would drop an
+        edge node's messages until it rebirths by itself."""
+        ncmd_at, self._ncmd_at = self._ncmd_at, None
+        if self._closing or self.rebirth_refused or ncmd_at is None or time.monotonic() - ncmd_at > REFUSED_WITHIN_S:
+            return
+        self._refusals += 1
+        user = self.security_config.username or self.username
+        if self._refusals < REFUSALS_TO_STOP:
+            logger.warning("[%s] the connection was lost right after a rebirth request (NCMD): if it happens again, "
+                           "user %r may not publish on spBv1.0/<group>/NCMD/<edge node>", self.source_name, user)
+            return
+        self.rebirth_refused = True
+        if self.sequence_handling != KEEP_ALL:
+            self.sequence_handling = KEEP_ALL
+            self._emit(self.sequencer.keep_all_from_now())
+        logger.error("[%s] the MQTT server closed the connection right after a rebirth request (NCMD) %d times in a "
+                     "row: user %r may not publish on spBv1.0/<group>/NCMD/<edge node>. No more rebirth requests from "
+                     "this source until it restarts, and every message gets its row (keep_all): give the user publish "
+                     "rights on spBv1.0/+/NCMD/+", self.source_name, self._refusals, user)
+
+    async def _tick(self) -> None:
+        while True:
+            await asyncio.sleep(TICK_S)
+            now = time.monotonic()
+            if self._ncmd_at is not None and self._client is not None and now - self._ncmd_at > REFUSED_WITHIN_S:
+                self._ncmd_at, self._refusals = None, 0       # the connection outlived the NCMD: not refused
+            try:
+                self.sequencer.tick(now)
+            except Exception as e:  # noqa: BLE001 - the timer must go on
+                logger.error("[%s] sequence timeout check failed: %s: %s", self.source_name, type(e).__name__, e)
 
     async def disconnect(self) -> None:
         """The MQTT client's disconnect, bounded: on a half-open connection aiomqtt's exit can wait for good,
         and the bridge calls this before it reconnects (seen 2026-10-06 when the test broker restarted)."""
+        self._closing = True
         self.online = False
         try:
             await asyncio.wait_for(self._close(), DISCONNECT_TIMEOUT_S)
@@ -238,6 +355,14 @@ class SparkplugClient(ProtocolClient):
         later subscription at its first message: found 2026-10-06 when Chariot was restarted). The bridge's
         own shutdown flag ends its reconnect loop."""
         await self.go_offline()
+
+    async def close(self) -> None:
+        """The source is gone (after its last stop): the reorder timer ends and held messages are dropped."""
+        if self._ticker is not None:
+            self._ticker.cancel()
+            await asyncio.gather(self._ticker, return_exceptions=True)
+            self._ticker = None
+        self.sequencer.close()
 
 
 def parse_endpoint(endpoint: str) -> tuple[str, int, bool]:
@@ -266,6 +391,12 @@ def _matches(topic_filter: str, topic: str) -> bool:
         if i >= len(t) or level not in ("+", t[i]):
             return False
     return len(f) == len(t)
+
+
+def _flag(value: Any) -> bool:
+    """A setting's true/false (YAML gives a bool, a placeholder a string): the rule of the bridge's switches and the
+    web form (anything but false, 0, no, off, empty or none is true)."""
+    return str(value).strip().lower() not in ("false", "0", "no", "off", "", "none")
 
 
 def _payload_bytes(payload: Any) -> bytes:

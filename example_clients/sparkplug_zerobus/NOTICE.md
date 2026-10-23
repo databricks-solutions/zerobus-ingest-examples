@@ -10,6 +10,7 @@ Copyright (c) 2014-2022 Cirrus Link Solutions and others, and stay under the
 - `sparkplug_connector/sparkplug/sparkplug_b_decode.proto`
 - `sparkplug_connector/sparkplug/sparkplug_b_decode_pb2.py`
 - `sparkplug_connector/sparkplug/tahu_json.py`
+- `sparkplug_connector/sparkplug/sequencer.py`
 
 What each is derived from: [sparkplug_connector/sparkplug/NOTICE.md](sparkplug_connector/sparkplug/NOTICE.md).
 Keep both notices with these files when you redistribute them.

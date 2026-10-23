@@ -49,6 +49,9 @@ class ProtocolClient(ABC):
         """Called by the bridge before disconnect() when the source stops, and after a connection error before
         it connects the same client again; nothing by default."""
 
+    async def close(self) -> None:
+        """Called by the bridge once the source has stopped for good (not between reconnects); nothing by default."""
+
     def _emit_stats(self, delta: dict[str, Any]) -> None:
         """Emit stats update."""
         if self.on_stats:

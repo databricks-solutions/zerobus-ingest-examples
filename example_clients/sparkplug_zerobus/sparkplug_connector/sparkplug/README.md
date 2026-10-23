@@ -12,6 +12,8 @@ Sparkplug 3.0 edge) and writes **one row per Sparkplug message** to a Delta tabl
   write-ahead log keeps unacknowledged rows across a crash.
 - **NBIRTH procedure call**: on each edge node birth it can call a stored procedure of yours, by default
   `create_edge_node_schema`, to (re)build per-model views.
+- **Strict Sparkplug sequencing** (by default): `seq` reordering, drop-until-rebirth and rebirth requests (NCMD)
+  as Eclipse Tahu's host library decides them, or a row for every message (`sequence_handling`, below).
 
 Several sources can run in one connector (each target table has its own queue and writer). Running it,
 Docker and the web UI: the [repository README](../../README.md).
@@ -23,12 +25,14 @@ Docker and the web UI: the [repository README](../../README.md).
 | `msg_id` | a new UUID per row |
 | `msg_topic`, `namespace`, `group_id`, `message_type`, `edge_node_id`, `device_id` | from the topic `spBv1.0/<group>/<type>/<edge>[/<device>]` (`device_id` null for node messages) |
 | `msg` | the payload as Tahu JSON (`tahu_json.py`; GZIP/DEFLATE-compressed payloads decompressed) |
-| `inserted_at` | epoch milliseconds at receipt |
+| `inserted_at` | epoch milliseconds at receipt (a message held for a missing `seq`: when it is put back in order) |
 
 Stored: births, deaths and data of edge nodes and devices (NBIRTH, NDATA, NDEATH, DBIRTH, DDATA,
-DDEATH). Skipped (counted; the last two also logged): host
-STATE messages, other namespaces, commands (NCMD, DCMD), malformed `spBv1.0/...` topics and payloads that
-can't be decoded. The payload is kept whole: splitting it into metrics is left to SQL.
+DDEATH); with `sequence_handling: strict` (the default) only those its checks pass (below). Skipped
+(counted; the last two also logged): host STATE messages, other namespaces, commands (NCMD, DCMD), malformed
+`spBv1.0/...` topics and payloads that can't be decoded. The payload is kept whole: splitting it into
+metrics is left to SQL. A metric sent without a datatype (allowed outside births) gets its type from the
+edge node's or device's last birth, as a Tahu host application decodes it.
 
 ## Databricks setup
 
@@ -80,13 +84,16 @@ sources:
     endpoint: mqtt://chariot:1883          # or mqtts://host:8883 (TLS: security:, below)
     # target_table: bridge_stage_db.stage_db.sparkplug_raw   # its own table; default: zerobus.default_target
     client_id: databricks-sparkplug        # fixed and unique
-    username: ...                          # ACL: subscribe spBv1.0/#, publish its own STATE topic
+    username: ...                          # ACL: subscribe spBv1.0/#, publish its own STATE topic and spBv1.0/+/NCMD/+
     password: ...
     # topics: ["spBv1.0/#"]                # default; qos defaults to 0 (Sparkplug publishes at QoS 0)
     primary_host_id: databricks-zerobus    # = the edges' Primary Host ID; omit: a plain subscriber
     state_format: v3                       # v3: spBv1.0/STATE/<id> JSON; v2: legacy STATE/<id> ONLINE/OFFLINE
     offline_after_seconds: 30              # OFFLINE (and disconnect) after Zerobus writes failed this long
     online_after_seconds: 30               # ONLINE again after Zerobus has been healthy this long
+    sequence_handling: strict              # strict: seq order, drops until the rebirth; keep_all: a row for every message
+    sequence_reordering_timeout: 5000      # ms to wait for a missing seq
+    block_auto_rebirth: false              # true: no rebirth requests (only with keep_all; see below)
     edge_node_schemas:                     # on NBIRTH: CALL <procedure>(prefix, group, edge, false)
       enabled: true
       warehouse_id: ...                    # SQL warehouse; the Zerobus service principal runs the call
@@ -168,6 +175,35 @@ one with the same id fights over STATE, and two connectors with different ids wr
   table, each NBIRTH procedure is called, off the MQTT and Zerobus paths; NBIRTHs of one
   edge node within 2 s make one call; a failed call is retried for ~5 minutes, then given up and counted.
 
+## Rows and rebirth requests
+
+These are the decisions of Eclipse Tahu 1.0.21's host library; `sequencer.py` is a port of them, quirks included,
+tested against Tahu's own classes. They hold as a plain subscriber and as primary host:
+
+- **Reordering:** one expected `seq` per edge node, for its messages and its devices' (0-255, then 0 again;
+  NBIRTH resets it to 0; NDEATH isn't counted). A message with another `seq` is held. When no message has come
+  in order for `sequence_reordering_timeout` (checked every second), the edge node's held messages are dropped
+  and a rebirth requested. An NBIRTH drops the held messages older than itself.
+- **Drops until the rebirth:** after that timeout the edge node counts as offline: its data is dropped (and
+  asked for a rebirth again, at most every 5 s) until its NBIRTH. Also dropped: data from an edge node or device
+  never born since the connector started (it asks for a rebirth), an NDEATH from an unknown or offline edge node
+  or with a `bdSeq` other than its NBIRTH's, a DDEATH for an offline device, a message without `seq`, and (a Tahu
+  quirk) everything after a DDEATH for an offline device until the next NBIRTH.
+- **Rebirth requests:** an NCMD on `spBv1.0/<group>/NCMD/<edge node>` (QoS 0, not retained) with a timestamp and
+  `Node Control/Rebirth` = true, at most one per edge node per 5 s. A connector that starts while the edges
+  publish therefore asks each edge node for a rebirth about 5 s after its first message. The MQTT user needs
+  publish rights on `spBv1.0/+/NCMD/+`: Chariot closes the connection on a publish its ACL refuses, so when the
+  connection is lost within 2 s of an NCMD twice in a row, the source sends no more until it restarts, logs an
+  ERROR naming the ACL and writes every message from then on (`keep_all`).
+- **`keep_all`:** every message gets its row at once; the same decisions run alongside, so the rebirth requests are
+  the same and the health counts what strict would have dropped. `block_auto_rebirth: true` (no rebirth requests)
+  needs it: strict ends an edge node's drops only with a rebirth.
+- **Compressed payloads** (GZIP/DEFLATE) are checked decompressed: Tahu's own checks read them as received, where
+  only `seq` is outside, so a compressed birth would never pass.
+
+Messages held for a missing `seq` are in memory only: a crash or stop loses them (counted at a stop as
+`shutdown`), as in a Tahu host application.
+
 ## Health
 
 `GET /api/sparkplug/health` (the web UI's port), per Sparkplug source: `state`, `mqtt_connected`,
@@ -177,7 +213,14 @@ one with the same id fights over STATE, and two connectors with different ids wr
 `zerobus_failing_since`, `batch_pending_since`, `zerobus_last_success`, `last_error`; with
 `edge_node_schemas`: `nbirths_written`, `edge_node_schema_calls`, `..._failures`, `..._gave_up`,
 `..._pending`, `..._last_error`; with the write-ahead log: `wal_pending`, `wal_rows_appended`,
-`wal_rows_replayed`, `wal_rows_not_logged`, `wal_bytes`, `wal_failures`, `wal_last_error`. `/api/metrics`
+`wal_rows_replayed`, `wal_rows_not_logged`, `wal_bytes`, `wal_failures`, `wal_last_error`; the sequence
+handling: `sequence_handling`, `messages_held`, `messages_reordered`, `messages_dropped` and `dropped` (by
+reason: `gap_timeout`, `pruned_at_nbirth`, `replaced_seq`, `no_seq`, `unknown_node`, `node_offline`,
+`unknown_device`, `device_offline`, `no_bdseq`, `bdseq_mismatch`, `seq_check`, `invalid_birth`, `undecodable`,
+`shutdown`; in `keep_all` what strict would drop), `rebirth_requests` (decided), `rebirth_requests_sent`,
+`..._rate_limited`, `..._blocked`, `..._failed` (not connected), `..._not_sent_refused`, `rebirth_refused` (true
+once the MQTT server refused them), `block_auto_rebirth`, `duplicate_aliases`, `sequence_errors` (messages written
+as received because the sequencing failed). `/api/metrics`
 has the same counters under `clients.<name>.sparkplug`, the writers under `zerobus_targets` and the logs
 under `wal`.
 
@@ -185,22 +228,22 @@ under `wal`.
 
 The connector's web UI (the [repository README](../../README.md#web-ui)) lists the sources with their state
 (`yes · ONLINE`) and primary host, and adds, edits and deletes them (asking before a delete): endpoint,
-target table, client id, primary host id, STATE format, offline/online seconds and the NBIRTH settings
-(switch, SQL warehouse, schema prefix, the procedure). The username, password, topics and TLS settings stay
+target table, client id, primary host id, STATE format, offline/online seconds, the NBIRTH settings
+(switch, SQL warehouse, schema prefix, the procedure), Rows (`sequence_handling`), Reordering timeout and
+Block auto rebirth; a running source's dropped messages show next to its state. The username, password, topics and TLS settings stay
 in the configuration file. A save restarts the source and writes the file the connector was started with
 (`--config`): fields the form doesn't show and unchanged fields stay as written there, `${env:...}`
 placeholders included; `GET /api/sources` masks passwords and secrets.
 
 ## Limitations
 
-- **Aliases aren't resolved**: a metric sent by alias only is stored as received (no `name`). MQTT
+- **Aliases aren't resolved**: a metric sent by alias only is stored as received (no `name`; its type comes
+  from the birth). MQTT
   Transmission (5.0.4) doesn't send aliases in the setup above anyway: it refuses "Aliased Tags" while UDTs
   are published as templates and while store and forward is on.
 - **Number spelling**: the JSON spells numbers as Tahu does on Java 17; from 2^63 up, a few floats and
   doubles would get a different last digit than on Java 19+ (`java_format.py`).
 - **No live log view** on the web page (logs go to the console and the connector's log files).
-- **No rebirth requests**: the connector never sends NCMD. As a plain subscriber it sees births only when
-  the edges send them (press Rebirth after starting it).
 - **No HTTPS proxy setting** for Zerobus.
 
 ## Files
