@@ -21,10 +21,8 @@ Sparkplug message** to a Delta table through Zerobus Ingest.
   certification.
 
 This folder is exported from [nickconnors/sparkplug-zerobus-connector](https://github.com/nickconnors/sparkplug-zerobus-connector)
-(commit [`03194a5`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/03194a5)), which keeps the
-Sparkplug B path of [pravinva/unified-ot-zerobus-connector](https://github.com/pravinva/unified-ot-zerobus-connector)
-(see [Unified OT Zerobus](../unified_ot_zerobus/) for its multi-protocol version). The tests and the web UI's source
-code live there.
+(commit [`03194a5`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/03194a5)). The tests and the
+web UI's source code live there.
 
 ## What's here
 
