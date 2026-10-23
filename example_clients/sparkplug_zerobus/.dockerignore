@@ -1,0 +1,10 @@
+__pycache__
+*.pyc
+.venv
+venv
+wal
+logs
+*.log
+.pytest_cache
+.env
+connector.env

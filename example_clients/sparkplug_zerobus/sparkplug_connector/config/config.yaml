@@ -1,0 +1,137 @@
+# The connector's configuration (the default one: edit it in place), then:
+#   1. Set the environment variables it reads: ZEROBUS_ENDPOINT (<workspace-id>.zerobus.<region>.cloud.databricks.com),
+#      DATABRICKS_HOST (https://<workspace>.cloud.databricks.com), DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET
+#      (a service principal with USE CATALOG, USE SCHEMA, MODIFY and SELECT on the target table), and the MQTT
+#      server's: SPARKPLUG_MQTT_ENDPOINT, SPARKPLUG_MQTT_USERNAME, SPARKPLUG_MQTT_PASSWORD. Never write a secret
+#      into this file.
+#   2. Set zerobus.default_target to your sparkplug_raw table.
+#   3. Under sources:, set enabled: true on the example source (it is off), and primary_host_id if the connector
+#      is the edges' primary host; add more sources the same way (a source's target_table: a table of its own).
+# Run: python -m sparkplug_connector (this file; --config <file> for another). The web page's source and ZeroBus
+# edits are saved back into the file it was started with, placeholders kept.
+bridge:
+  autostart: true
+web_ui:
+  enabled: true
+  host: 0.0.0.0
+  port: 8001
+  authentication:                  # login to the web page, off by default
+    enabled: false
+    method: oauth2                 # oauth2 (a Databricks workspace's OAuth) or client_cert (needs tls)
+    oauth:
+      provider: databricks         # the only provider (MFA: the workspace's identity provider)
+      client_id: ''
+      client_secret: ''
+      workspace_host: '${env:DATABRICKS_HOST:}'
+      redirect_uri: http://localhost:8001/login/callback
+      scopes:
+      - all-apis
+    session:
+      secret_key: ''
+      max_age_seconds: 28800
+      cookie_name: sparkplug_connector_session
+      secure: false
+      httponly: true
+      samesite: lax
+    rbac:
+      enabled: true
+      roles:
+        admin:
+          permissions:
+          - read
+          - write
+          - configure
+          - manage_users
+          - start_stop
+          - delete
+        operator:
+          permissions:
+          - read
+          - write
+          - start_stop
+        viewer:
+          permissions:
+          - read
+      role_mappings:
+        OT-Admins: admin
+        OT-Operators: operator
+        OT-Viewers: viewer
+      default_role: viewer
+    client_cert:
+      role_mappings:
+        admin: admin
+        operator: operator
+        viewer: viewer
+      default_role: viewer
+  tls:                             # HTTPS for the web page, off by default
+    enabled: false
+    common_name: localhost
+    san_list:
+    - localhost
+    - 127.0.0.1
+    - ::1
+    cert_file: ~/.sparkplug_connector/certs/server-cert.pem
+    key_file: ~/.sparkplug_connector/certs/server-key.pem
+    ca_cert_file: ~/.sparkplug_connector/certs/ca-cert.pem
+    hsts:
+      max_age: 31536000
+      include_subdomains: true
+      preload: false
+    require_client_cert: false
+sources:
+# One row per Sparkplug B message in sparkplug_raw; optionally the edges' primary host and a procedure call
+# per NBIRTH (sparkplug_connector/sparkplug/README.md)
+- name: sparkplug-example
+  protocol: sparkplug
+  enabled: false
+  endpoint: '${env:SPARKPLUG_MQTT_ENDPOINT:mqtt://localhost:1883}'   # mqtts://host:8883 for TLS
+  # target_table: catalog.schema.table   # a table of its own; without it the default_target below
+  client_id: databricks-sparkplug
+  username: '${env:SPARKPLUG_MQTT_USERNAME:}'
+  password: '${env:SPARKPLUG_MQTT_PASSWORD:}'
+  # security:                      # TLS settings (protocols/mqtt_security.py)
+  #   ca_cert_path: /certs/ca.pem
+  #   client_cert_path: /certs/client.pem
+  #   client_key_path: /certs/client.key
+  primary_host_id: ''              # the edges' Primary Host ID, e.g. databricks-zerobus; empty: a plain subscriber
+  state_format: v3
+  offline_after_seconds: 30
+  online_after_seconds: 30
+  # Rows and rebirth requests (sparkplug_connector/sparkplug/README.md):
+  sequence_handling: strict        # strict: messages in seq order, an edge node's dropped after a gap until its
+                                   # rebirth; keep_all: a row for every message
+  sequence_reordering_timeout: 5000  # ms to wait for a missing seq
+  block_auto_rebirth: false        # false: rebirth requests (NCMD), the MQTT user needs publish on spBv1.0/+/NCMD/+;
+                                   # true (no requests) only with keep_all
+  edge_node_schemas:
+    enabled: false
+    warehouse_id: ''
+    procedures: [bridge_node_db.stage_db.create_edge_node_schema]
+    schema_prefix: nb
+zerobus:
+  enabled: true
+  workspace_host: '${env:DATABRICKS_HOST}'
+  zerobus_endpoint: '${env:ZEROBUS_ENDPOINT}'
+  default_target:                  # the table of every source without a target_table of its own
+    workspace_host: '${env:DATABRICKS_HOST}'
+    catalog: bridge_stage_db
+    schema: stage_db
+    table: sparkplug_raw
+  auth:
+    # or the encrypted credential store: ${credential:zerobus.client_id} / ${credential:zerobus.client_secret}
+    # (python -m sparkplug_connector.core.credential_manager store ...)
+    client_id: '${env:DATABRICKS_CLIENT_ID}'
+    client_secret: '${env:DATABRICKS_CLIENT_SECRET}'
+  drain_timeout_seconds: 15        # on shutdown: how long the queued rows may take to be written
+  wal:                             # a write-ahead log per table: rows survive a crash or a cut-short stop
+    enabled: true                  # (the Docker image: /app/wal, keep it on a volume)
+    path: wal
+    fsync_interval_seconds: 0.2
+  batch:
+    max_records: 500
+    linger_seconds: 0.2
+  source_targets: {}
+backpressure:
+  memory_queue:                    # per table; a primary host goes OFFLINE at 80% full
+    max_size: 100000
+    drop_policy: oldest            # oldest, newest or reject

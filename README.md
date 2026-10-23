@@ -24,6 +24,7 @@ In this repo, you will find examples and demos of Zerobus Ingest, a push-based A
 * [syslog-ng Zerobus](./example_clients/syslog-ng-zerobus/) - Forward syslog-ng log streams to a Delta table via OTLP/gRPC with automatic OAuth2 token management
 * [OPC UA Zerobus](./example_clients/opcua_zerobus/) - Stream OPC UA telemetry to Delta tables with simple (direct) and advanced (RabbitMQ-buffered) architectures
 * [Unified OT Zerobus](./example_clients/unified_ot_zerobus/) - Multi-protocol OT/IoT connector (OPC UA, MQTT, Modbus) with optional Web UI and Zerobus routing ([upstream source](https://github.com/pravinva/unified-ot-zerobus-connector))
+* [Sparkplug B Zerobus](./example_clients/sparkplug_zerobus/) - Write every Sparkplug B message (e.g. Ignition MQTT Transmission) to a Delta table as Tahu JSON, as the edges' primary host (store and forward) or a plain subscriber, with confirmed writes and a write-ahead log ([upstream source](https://github.com/nickconnors/sparkplug-zerobus-connector))
 * [Debezium Zerobus](./example_clients/debezium_zerobus/) - Replicate SQL Server change data capture into Delta tables using Debezium Server's native Zerobus sink, with no Kafka or Connect cluster
 * [GenAI Agent Zerobus](./example_clients/genai_agent_zerobus/) - Ship a Python GenAI agent's OpenTelemetry traces, logs, and metrics into Delta tables via Zerobus, then view them as agentic traces in MLflow (LangChain example + drop-in exporter)
 
