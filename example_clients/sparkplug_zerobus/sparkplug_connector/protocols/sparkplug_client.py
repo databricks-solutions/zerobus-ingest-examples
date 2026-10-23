@@ -114,6 +114,11 @@ class SparkplugClient(ProtocolClient):
         return self._client is not None
 
     @property
+    def disconnect_requested(self) -> bool:
+        """The connection was closed by the connector itself (going OFFLINE, stopping), not lost."""
+        return self._closing
+
+    @property
     def is_online(self) -> bool:
         return self.online and self._client is not None
 

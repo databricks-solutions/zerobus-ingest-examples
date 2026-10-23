@@ -125,6 +125,7 @@ class Bridge:
         }
 
         self._shutdown = False
+        self._stopping_sources: set = set()     # stop_source in progress: their subscription's end isn't an error
         self.running = False
         self._starting = False
         self._start_lock = asyncio.Lock()
@@ -476,7 +477,15 @@ class Bridge:
                     break
 
             except Exception as e:
-                logger.error(f"[{source_name}] Error: {e}")
+                if self._shutdown or source_name in self._stopping_sources:
+                    logger.info(f"[{source_name}] subscription ended: the source is stopping")
+                    break
+                requested = getattr(client, 'disconnect_requested', False)
+                if requested:
+                    # the client disconnected itself (a primary host going OFFLINE): it reconnects once allowed
+                    logger.info(f"[{source_name}] disconnected by the connector ({e})")
+                else:
+                    logger.error(f"[{source_name}] Error: {e}")
 
                 # Cleanup
                 try:
@@ -495,7 +504,7 @@ class Bridge:
                 jitter = reconnect_delay * 0.1 * (2 * (time.time() % 1) - 0.5)
                 sleep_time = min(reconnect_delay + jitter, self.reconnect_max_delay_sec)
 
-                logger.warning(f"[{source_name}] Reconnecting in {sleep_time:.1f}s...")
+                (logger.info if requested else logger.warning)(f"[{source_name}] Reconnecting in {sleep_time:.1f}s...")
                 self.metrics['reconnections'] += 1
 
                 await asyncio.sleep(sleep_time)
@@ -535,6 +544,13 @@ class Bridge:
         if source_name not in self.clients:
             return {'status': 'ok', 'message': f"Source already stopped: {source_name}"}
 
+        self._stopping_sources.add(source_name)
+        try:
+            return await self._stop_source(source_name)
+        finally:
+            self._stopping_sources.discard(source_name)
+
+    async def _stop_source(self, source_name: str) -> Dict[str, Any]:
         host_task = self.host_tasks.pop(source_name, None)
         if host_task is not None:
             host_task.cancel()
