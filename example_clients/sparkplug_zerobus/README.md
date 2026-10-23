@@ -17,11 +17,11 @@ Sparkplug message** to a Delta table through Zerobus Ingest.
   each edge node and device online or offline and since when, and a rebirth request for an edge node.
 - **The Eclipse Sparkplug TCK's Host Application tests** pass as primary host, except where the connector does less
   than a full host application on purpose (no metric writes, no STALE marking); details in the connector's
-  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/9659c7a/README.md#sparkplug-tck). Not a
+  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/09ed493/README.md#sparkplug-tck). Not a
   certification.
 
 This folder is exported from [nickconnors/sparkplug-zerobus-connector](https://github.com/nickconnors/sparkplug-zerobus-connector)
-(commit [`9659c7a`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/9659c7a)). The tests and the
+(commit [`09ed493`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/09ed493)). The tests and the
 web UI's source code live there.
 
 ## What's here
@@ -71,7 +71,7 @@ GRANT MODIFY, SELECT ON TABLE bridge_stage_db.stage_db.sparkplug_raw TO `<applic
 ```
 
   The names are an example (any catalog, schema and table work). Column comments and sample queries:
-  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/9659c7a/docs/UNITY_CATALOG_SCHEMAS.md);
+  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/09ed493/docs/UNITY_CATALOG_SCHEMAS.md);
   the grants for the NBIRTH call: [sparkplug_connector/sparkplug/README.md](sparkplug_connector/sparkplug/README.md#databricks-setup).
 - The Zerobus endpoint: `<workspace-id>.zerobus.<region>.cloud.databricks.com`.
 - An MQTT user that may subscribe to `spBv1.0/#`, publish rebirth requests on `spBv1.0/+/NCMD/+` (unless
@@ -106,12 +106,25 @@ under the source's `security:` (commented in the example). Every setting:
 
 From this folder (`--build-arg PIP_INDEX_URL=<your index>` if pypi.org isn't reachable):
 
+Linux / macOS (bash):
+
 ```
 docker build -t sparkplug-zerobus .
 docker run -d --name sparkplug-zerobus --restart unless-stopped --stop-timeout 30 --env-file connector.env \
   -p 127.0.0.1:8001:8001 \
   --mount type=bind,source="$PWD/sparkplug_connector/config/config.yaml",target=/app/sparkplug_connector/config/config.yaml \
   --mount type=volume,source=connector-wal,target=/app/wal \
+  sparkplug-zerobus
+```
+
+Windows (PowerShell; a backtick ends each continued line, nothing after it):
+
+```powershell
+docker build -t sparkplug-zerobus .
+docker run -d --name sparkplug-zerobus --restart unless-stopped --stop-timeout 30 --env-file connector.env `
+  -p 127.0.0.1:8001:8001 `
+  --mount "type=bind,source=$PWD\sparkplug_connector\config\config.yaml,target=/app/sparkplug_connector/config/config.yaml" `
+  --mount "type=volume,source=connector-wal,target=/app/wal" `
   sparkplug-zerobus
 ```
 
@@ -143,10 +156,20 @@ Databricks: `GET /api/sparkplug/health` does, per source (`state`, `rows_written
 
 ## Or run it with Python
 
+Linux / macOS:
+
 ```
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m sparkplug_connector
+```
+
+Windows (PowerShell):
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m sparkplug_connector
 ```
 
 ## Web UI
