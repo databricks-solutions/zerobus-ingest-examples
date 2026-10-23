@@ -158,6 +158,7 @@ class WebServer:
 
             web.post('/api/sources/{name}/start', self.start_source),
             web.post('/api/sources/{name}/stop', self.stop_source),
+            web.post('/api/sources/{name}/rebirth', self.request_rebirth),
 
             # Bridge control
             web.post('/api/bridge/start', self.start_bridge),
@@ -173,6 +174,7 @@ class WebServer:
             # Monitoring
             web.get('/api/metrics', self.get_metrics),
             web.get('/api/sparkplug/health', self.get_sparkplug_health),
+            web.get('/api/sparkplug/edge-nodes', self.get_sparkplug_edge_nodes),
             web.get('/api/status', self.get_status),
 
             # Health
@@ -365,6 +367,26 @@ class WebServer:
             logger.error(f"Failed to stop source: {e}", exc_info=True)
             return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
+
+    @require_permission(Permission.START_STOP)
+    async def request_rebirth(self, request: web.Request) -> web.Response:
+        """Ask an edge node for a rebirth (``{"group_id": ..., "edge_node_id": ...}``): the source sends an NCMD."""
+        try:
+            name = request.match_info['name']
+            try:
+                body = await request.json()
+            except ValueError:
+                body = None
+            if not isinstance(body, dict):
+                return web.json_response({'status': 'error', 'message': 'a JSON object with group_id and edge_node_id'},
+                                         status=400)
+            res = await self.bridge.request_rebirth(name, body.get('group_id'), body.get('edge_node_id'))
+            code = res.pop('code', None)
+            status = 200 if res['status'] == 'ok' else {'not_found': 404, 'invalid': 400}.get(code, 409)
+            return web.json_response(res, status=status)
+        except Exception as e:
+            logger.error(f"Failed to request a rebirth: {e}", exc_info=True)
+            return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
     @require_permission(Permission.READ)
     async def get_zerobus_config(self, request: web.Request) -> web.Response:
@@ -699,6 +721,15 @@ class WebServer:
             return web.json_response(self.bridge.sparkplug_health())
         except Exception as e:
             logger.error(f"Failed to get Sparkplug health: {e}", exc_info=True)
+            return web.json_response({'status': 'error', 'message': str(e)}, status=500)
+
+    @require_permission(Permission.READ)
+    async def get_sparkplug_edge_nodes(self, request: web.Request) -> web.Response:
+        """Per Sparkplug source: its edge nodes and devices, online or offline, since when."""
+        try:
+            return web.json_response(self.bridge.sparkplug_edge_nodes())
+        except Exception as e:
+            logger.error(f"Failed to get the Sparkplug edge nodes: {e}", exc_info=True)
             return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
     @require_permission(Permission.READ)

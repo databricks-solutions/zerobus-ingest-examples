@@ -6,8 +6,8 @@ bridge, which writes it unchanged.
 
 With ``primary_host_id`` it is the edges' Sparkplug **primary host application** (``sparkplug/host.py``):
 each connection carries a will (OFFLINE STATE, retained, QoS 1) stamped with the connect time T,
-subscribes, then publishes ONLINE with the same T; a live OFFLINE for its own host id is answered with
-ONLINE again. The bridge's ``HostSupervisor`` opens ``online_allowed`` only while Databricks accepts the
+subscribes (its topics, then its own STATE topic), then publishes ONLINE with the same T; a live OFFLINE for its
+own host id is answered with ONLINE again. The bridge's ``HostSupervisor`` opens ``online_allowed`` only while Databricks accepts the
 rows; ``connect()`` waits for it, and ``go_offline()`` publishes OFFLINE and disconnects.
 Without ``primary_host_id`` it is a plain subscriber (not a primary host).
 
@@ -17,6 +17,8 @@ In both modes, rows and rebirth requests follow Eclipse Tahu's host decisions (`
 ``keep_all``: strict needs the rebirths). A rebirth request is an NCMD on ``spBv1.0/<group>/NCMD/<edge node>`` (the
 MQTT user needs publish rights there); if the server closes the connection right after one twice in a row (Chariot's
 answer to a refused publish), the source sends no more until it restarts and writes every message (``keep_all``).
+An operator can also ask an edge node for a rebirth (``request_rebirth``: the same NCMD, sent at once; not an automatic
+request, so ``block_auto_rebirth`` doesn't stop it).
 """
 from __future__ import annotations
 
@@ -80,6 +82,7 @@ class SparkplugClient(ProtocolClient):
         self.offline_after_seconds = float(config.get("offline_after_seconds", 30))
         self.online_after_seconds = float(config.get("online_after_seconds", 30))
         self.online = False                           # ONLINE published on the current connection
+        self._last_own_state: bytes | None = None     # the last STATE seen on our topic (this connection)
         self.session_timestamp: int | None = None     # T: the will's and ONLINE's timestamp
         self.online_allowed = asyncio.Event()         # the HostSupervisor opens it; always open for a plain subscriber
         if not self.primary_host_id:
@@ -139,6 +142,7 @@ class SparkplugClient(ProtocolClient):
         self.session_timestamp = t
         self._closing = False
         self._ncmd_at = None
+        self._last_own_state = None
 
     async def subscribe(self) -> None:
         if self._client is None:
@@ -146,9 +150,9 @@ class SparkplugClient(ProtocolClient):
         for topic in self.topics:
             await self._client.subscribe(topic, qos=self.qos)
         if self.primary_host_id:
-            # own STATE before ONLINE; only if no filter covers it (spBv1.0/# covers v3), or every STATE comes twice
-            if not any(_matches(f, self.state_topic) for f in self.topics):
-                await self._client.subscribe(self.state_topic, qos=1)
+            # own STATE before ONLINE, even under spBv1.0/# (Sparkplug: the host subscribes to its own STATE topic;
+            # the TCK checks for the filter itself); a server may then send each STATE once per filter: _on_own_state
+            await self._client.subscribe(self.state_topic, qos=1)
             async with self._state_lock:
                 # taken OFFLINE while subscribing (go_offline published OFFLINE, or this connection is gone)
                 if not self.online_allowed.is_set() or self._client is None:
@@ -167,8 +171,8 @@ class SparkplugClient(ProtocolClient):
             async for message in self._client.messages:
                 topic, payload = message.topic.value, _payload_bytes(message.payload)
                 if self.primary_host_id and topic == self.state_topic:
-                    self.counters["messages_received"] += 1
-                    self._on_own_state(payload, bool(getattr(message, "retain", False)))
+                    if self._on_own_state(payload, bool(getattr(message, "retain", False))):
+                        self.counters["messages_received"] += 1       # a copy (once per filter) isn't counted
                     continue
                 self.handle_message(topic, payload, int(time.time() * 1000))
         except aiomqtt.MqttError:
@@ -178,14 +182,20 @@ class SparkplugClient(ProtocolClient):
             self.subscribed.clear()
             self.online = False
 
-    def _on_own_state(self, payload: bytes, retained: bool) -> None:
+    def _on_own_state(self, payload: bytes, retained: bool) -> bool:
         """A live OFFLINE for our host id while ONLINE: publish ONLINE again with T. The retained copy the
-        broker delivers on subscribe is the previous session's state, about to be replaced: ignored."""
+        broker delivers on subscribe is the previous session's state, about to be replaced: ignored. So is a copy
+        of the STATE just seen (a server may send one per matching filter: ``spBv1.0/#`` and the STATE topic), or
+        ONLINE would go out twice. False for a copy."""
+        copy, self._last_own_state = payload == self._last_own_state, payload
+        if copy:
+            return False
         if not self.online or retained or is_online_state(self.state_format, payload):
-            return
+            return True
         task = asyncio.get_running_loop().create_task(self._republish_online(self.session_timestamp))
         self._state_tasks.add(task)
         task.add_done_callback(self._state_tasks.discard)
+        return True
 
     async def _republish_online(self, t: int) -> None:
         async with self._state_lock:
@@ -199,6 +209,7 @@ class SparkplugClient(ProtocolClient):
                 logger.warning("[%s] own STATE was set offline while ONLINE; re-published ONLINE (timestamp %d)",
                                self.source_name, t)
             except Exception as e:  # noqa: BLE001 - the connection may be going away
+                self._last_own_state = None     # no ONLINE came back: the same OFFLINE again is answered again
                 logger.warning("[%s] re-publishing ONLINE failed: %s", self.source_name, e)
 
     async def go_offline(self) -> None:
@@ -262,12 +273,34 @@ class SparkplugClient(ProtocolClient):
             "sequence_errors": self.counters["sequence_errors"],
             "block_auto_rebirth": self.block_auto_rebirth,
             "rebirth_requests_sent": self.counters["rebirth_requests_sent"],
+            "rebirth_requests_on_request": self.counters["rebirth_requests_on_request"],
             "rebirth_requests_failed": self.counters["rebirth_requests_failed"],
             "rebirth_refused": self.rebirth_refused,
             "rebirth_requests_not_sent_refused": self.counters["rebirth_requests_not_sent_refused"],
         }
 
+    def edge_nodes(self) -> list[dict[str, Any]]:
+        """The edge nodes and devices seen, online or offline since when (``Sequencer.edge_nodes``)."""
+        return self.sequencer.edge_nodes()
+
     # ------------------------------------------------------------------ rebirth requests
+
+    async def request_rebirth(self, group_id: str, edge_node_id: str) -> tuple[bool, str]:
+        """An operator's rebirth request for an edge node: the NCMD, sent now (sent?, why not). ValueError: not a
+        group id and an edge node id."""
+        if not _valid_id(group_id) or not _valid_id(edge_node_id):
+            raise ValueError("a group id and an edge node id, without '/', '+' or '#'")
+        topic = rebirth_topic(group_id, edge_node_id)
+        if self.rebirth_refused:
+            return False, "the MQTT server refused rebirth requests (NCMD) from this source: none sent until it restarts"
+        client = self._client
+        if client is None or not self.subscribed.is_set():
+            return False, "not connected"
+        self.counters["rebirth_requests_on_request"] += 1
+        self.sequencer.rebirth_requested(group_id, edge_node_id, time.monotonic())
+        if not await self._send_rebirth(client, topic):
+            return False, f"the NCMD on {topic} wasn't sent (see the log)"
+        return True, f"NCMD sent on {topic}"
 
     def _request_rebirth(self, group_id: str, edge_node_id: str) -> None:
         """The sequencer asks an edge node for a rebirth: an NCMD (QoS 0, not retained)."""
@@ -284,16 +317,18 @@ class SparkplugClient(ProtocolClient):
         self._state_tasks.add(task)
         task.add_done_callback(self._state_tasks.discard)
 
-    async def _send_rebirth(self, client: aiomqtt.Client, topic: str) -> None:
+    async def _send_rebirth(self, client: aiomqtt.Client, topic: str) -> bool:
         self._ncmd_at = time.monotonic()
         try:
             await asyncio.wait_for(client.publish(topic, rebirth_payload(int(time.time() * 1000)), qos=0, retain=False),
                                    STATE_PUBLISH_TIMEOUT_S)
             self.counters["rebirth_requests_sent"] += 1
             logger.info("[%s] rebirth requested: NCMD on %s", self.source_name, topic)
+            return True
         except Exception as e:  # noqa: BLE001 - the connection may be going away
             self.counters["rebirth_requests_failed"] += 1
             logger.warning("[%s] rebirth request on %s not sent: %s", self.source_name, topic, e)
+            return False
 
     def _connection_lost(self) -> None:
         """The connection is lost. Right after an NCMD, twice in a row, the server refused them (Chariot closes the
@@ -382,15 +417,9 @@ def parse_endpoint(endpoint: str) -> tuple[str, int, bool]:
     return endpoint, default_port, use_tls
 
 
-def _matches(topic_filter: str, topic: str) -> bool:
-    """MQTT topic filter matching (``+`` one level, ``#`` the rest)."""
-    f, t = topic_filter.split("/"), topic.split("/")
-    for i, level in enumerate(f):
-        if level == "#":
-            return True
-        if i >= len(t) or level not in ("+", t[i]):
-            return False
-    return len(f) == len(t)
+def _valid_id(value: Any) -> bool:
+    """A Sparkplug group or edge node id for a topic: a non-empty string without ``/``, ``+`` or ``#``."""
+    return isinstance(value, str) and value != "" and not any(c in value for c in "/+#")
 
 
 def _flag(value: Any) -> bool:

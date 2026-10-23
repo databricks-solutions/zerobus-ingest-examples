@@ -13,10 +13,15 @@ Sparkplug message** to a Delta table through Zerobus Ingest.
 - **Strict Sparkplug sequencing** (by default): messages put back in `seq` order, an edge node's messages dropped
   after a gap until its rebirth, rebirth requests (NCMD) to edge nodes it hasn't seen born, as Eclipse Tahu's host
   library decides them (ported and tested against it); or a row for every message (`sequence_handling: keep_all`).
-- **Web UI** to add, edit, start and stop sources and Zerobus, with an optional login; a health endpoint for Docker.
+- **Web UI** to add, edit, start and stop sources and Zerobus, with an optional login; a health endpoint for Docker;
+  each edge node and device online or offline and since when, and a rebirth request for an edge node.
+- **The Eclipse Sparkplug TCK's Host Application tests** pass as primary host, except where the connector does less
+  than a full host application on purpose (no metric writes, no STALE marking); details in the connector's
+  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/dbce608/README.md#sparkplug-tck). Not a
+  certification.
 
 This folder is exported from [nickconnors/sparkplug-zerobus-connector](https://github.com/nickconnors/sparkplug-zerobus-connector)
-(commit [`11e39e5`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/11e39e5)), which keeps the
+(commit [`dbce608`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/dbce608)), which keeps the
 Sparkplug B path of [pravinva/unified-ot-zerobus-connector](https://github.com/pravinva/unified-ot-zerobus-connector)
 (see [Unified OT Zerobus](../unified_ot_zerobus/) for its multi-protocol version). The tests and the web UI's source
 code live there.
@@ -68,7 +73,7 @@ GRANT MODIFY, SELECT ON TABLE bridge_stage_db.stage_db.sparkplug_raw TO `<applic
 ```
 
   The names are an example (any catalog, schema and table work). Column comments and sample queries:
-  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/11e39e5/docs/UNITY_CATALOG_SCHEMAS.md);
+  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/dbce608/docs/UNITY_CATALOG_SCHEMAS.md);
   the grants for the NBIRTH call: [sparkplug_connector/sparkplug/README.md](sparkplug_connector/sparkplug/README.md#databricks-setup).
 - The Zerobus endpoint: `<workspace-id>.zerobus.<region>.cloud.databricks.com`.
 - An MQTT user that may subscribe to `spBv1.0/#`, publish rebirth requests on `spBv1.0/+/NCMD/+` (unless
@@ -146,6 +151,7 @@ python3.12 -m venv .venv
 ## Web UI
 
 `http://127.0.0.1:8001/`: Overview, **Sources** (add, edit, delete, start, stop; the NBIRTH procedure settings),
+**Edge nodes** (each edge node and device online or offline since when; Request rebirth sends the edge node an NCMD),
 **ZeroBus** (endpoint, table, credentials, start and stop, diagnostics), Status, Metrics, Auth. A save goes to the
 file the connector was started with (`--config`), `${env:...}` placeholders kept; the API never returns passwords
 or secrets.

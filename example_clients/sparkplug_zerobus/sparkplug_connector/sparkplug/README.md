@@ -140,8 +140,9 @@ one with the same id fights over STATE, and two connectors with different ids wr
 ## How it behaves
 
 - **ONLINE:** connect with a will (OFFLINE, QoS 1, retained) stamped with the connect time T, subscribe
-  (own STATE too), publish ONLINE with T. A live OFFLINE for its own id while ONLINE is answered with
-  ONLINE again (`state_republished`); the retained copy of the previous session's state is not.
+  (its own STATE topic too, a filter of its own even under `spBv1.0/#`), publish ONLINE with T. A live OFFLINE
+  for its own id while ONLINE is answered with ONLINE again (`state_republished`), once even when the MQTT
+  server sends the OFFLINE once per matching filter; the retained copy of the previous session's state is not.
 - **OFFLINE** (`host.py`): when Zerobus writes have failed, or a batch has waited for its
   acknowledgement, for `offline_after_seconds`, or the queue is above its high-water mark (80%), it
   publishes OFFLINE and disconnects (Sparkplug 3.0 doesn't allow ONLINE again on the same connection).
@@ -195,6 +196,11 @@ tested against Tahu's own classes. They hold as a plain subscriber and as primar
   publish rights on `spBv1.0/+/NCMD/+`: Chariot closes the connection on a publish its ACL refuses, so when the
   connection is lost within 2 s of an NCMD twice in a row, the source sends no more until it restarts, logs an
   ERROR naming the ACL and writes every message from then on (`keep_all`).
+- **On request:** an operator can ask an edge node for a rebirth (the web page's **Edge nodes**, or
+  `POST /api/sources/<source>/rebirth` with `{"group_id": ..., "edge_node_id": ...}`; the start/stop
+  permission): the same NCMD, sent at once (an automatic one for that edge node then waits the 5 s). It isn't an
+  automatic request, so `block_auto_rebirth` doesn't stop it;
+  after a refusal (above) none is sent. The connector sends no other commands: no DCMD and no metric writes.
 - **`keep_all`:** every message gets its row at once; the same decisions run alongside, so the rebirth requests are
   the same and the health counts what strict would have dropped. `block_auto_rebirth: true` (no rebirth requests)
   needs it: strict ends an edge node's drops only with a rebirth.
@@ -218,11 +224,19 @@ handling: `sequence_handling`, `messages_held`, `messages_reordered`, `messages_
 reason: `gap_timeout`, `pruned_at_nbirth`, `replaced_seq`, `no_seq`, `unknown_node`, `node_offline`,
 `unknown_device`, `device_offline`, `no_bdseq`, `bdseq_mismatch`, `seq_check`, `invalid_birth`, `undecodable`,
 `shutdown`; in `keep_all` what strict would drop), `rebirth_requests` (decided), `rebirth_requests_sent`,
-`..._rate_limited`, `..._blocked`, `..._failed` (not connected), `..._not_sent_refused`, `rebirth_refused` (true
+`..._rate_limited`, `..._blocked`, `..._failed` (not connected), `rebirth_requests_on_request` (the operator's), `..._not_sent_refused`, `rebirth_refused` (true
 once the MQTT server refused them), `block_auto_rebirth`, `duplicate_aliases`, `sequence_errors` (messages written
 as received because the sequencing failed). `/api/metrics`
 has the same counters under `clients.<name>.sparkplug`, the writers under `zerobus_targets` and the logs
 under `wal`.
+
+`GET /api/sparkplug/edge-nodes`, per Sparkplug source: each edge node the sequencing knows (`group_id`,
+`edge_node_id`, `online`, `since` in epoch ms and `since_iso`, `changed_by`, `bdseq`) and its `devices`
+(`device_id`, `online`, `since`, `since_iso`, `changed_by`), with Sparkplug 3.0's times: a birth's own
+timestamp (`NBIRTH`, `DBIRTH`), an NDEATH's receipt (the host's UTC time: the MQTT server may publish it as the
+will; its devices go offline then too), a DDEATH's timestamp, and the host's time when the reorder timeout sets an
+edge node offline (`reorder timeout`). The web page's **Edge nodes** shows the same. Metric values aren't kept,
+so nothing is marked STALE here: that shows in the tables downstream.
 
 ## Web page
 
@@ -233,7 +247,9 @@ target table, client id, primary host id, STATE format, offline/online seconds, 
 Block auto rebirth; a running source's dropped messages show next to its state. The username, password, topics and TLS settings stay
 in the configuration file. A save restarts the source and writes the file the connector was started with
 (`--config`): fields the form doesn't show and unchanged fields stay as written there, `${env:...}`
-placeholders included; `GET /api/sources` masks passwords and secrets.
+placeholders included; `GET /api/sources` masks passwords and secrets. **Edge nodes** lists each running
+source's edge nodes and devices (`GET /api/sparkplug/edge-nodes`, under *Health*) with a **Request rebirth**
+button per edge node.
 
 ## Limitations
 

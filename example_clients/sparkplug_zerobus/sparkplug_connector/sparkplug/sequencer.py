@@ -28,6 +28,9 @@ A port of the decisions of Tahu 1.0.21's host library (the classes above), quirk
    offline (so its data is dropped until the NBIRTH). ``block_auto_rebirth`` stops them being sent, not decided.
 4. **The births' metric types** (``HostApplicationMetricMap``): a metric sent without a datatype decodes with the type
    the births gave it (``tahu_json.MetricTypes``); a birth repeating an alias asks for a rebirth.
+5. **The edge nodes' and devices' state** (``edge_nodes``): online or offline since when, with Sparkplug's times: a
+   birth's own timestamp, an NDEATH's receipt (the host's UTC time: the MQTT server may send it as the will), a
+   DDEATH's timestamp, and the host's time when the reorder timeout sets an edge node offline.
 
 ``strict``: the rows are those Tahu hands on, in its order (a held row's ``inserted_at`` is when it is released).
 ``keep_all``: every message gets its row at once; the same decisions run alongside, for the rebirth requests and
@@ -39,6 +42,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import time
 from collections import Counter
 from typing import Callable
 
@@ -86,14 +90,24 @@ class _Queue:
 
 
 class _Node:
-    """SparkplugEdgeNode, with its devices' online flags (SparkplugDevice)."""
-    __slots__ = ("online", "birth_bdseq", "last_seq", "devices")
+    """SparkplugEdgeNode, with its devices' online flags (SparkplugDevice); since when and what changed them."""
+    __slots__ = ("online", "birth_bdseq", "last_seq", "devices", "since", "changed_by", "device_since")
 
     def __init__(self) -> None:
         self.online = False
         self.birth_bdseq: int | None = None
         self.last_seq: int | None = None
         self.devices: dict[str, bool] = {}
+        self.since: int | None = None                           # epoch ms
+        self.changed_by: str | None = None
+        self.device_since: dict[str, tuple[int, str]] = {}      # device: (epoch ms, what changed it)
+
+    def mark(self, online: bool, ms: int, by: str) -> None:
+        self.online, self.since, self.changed_by = online, ms, by
+
+    def mark_device(self, device: str, online: bool, ms: int, by: str) -> None:
+        self.devices[device] = online
+        self.device_since[device] = (ms, by)
 
 
 class _MetricMap:
@@ -110,7 +124,7 @@ class Sequencer:
 
     def __init__(self, sequence_handling: str = STRICT, reorder_timeout_ms: int = DEFAULT_REORDER_TIMEOUT_MS,
                  block_auto_rebirth: bool = False, request_rebirth: Callable[[str, str], None] | None = None,
-                 name: str = "sparkplug"):
+                 name: str = "sparkplug", clock: Callable[[], float] = time.time):
         if sequence_handling not in MODES:
             raise ValueError(f"sequence_handling must be {' or '.join(MODES)}, not {sequence_handling!r}")
         if reorder_timeout_ms <= 0:
@@ -120,6 +134,7 @@ class Sequencer:
         self.block_auto_rebirth = block_auto_rebirth
         self._request = request_rebirth
         self._name = name
+        self._clock = clock                             # the host's UTC time (seconds), for the edge node state
         self._queues: dict[tuple[str, str], _Queue] = {}
         self._nodes: dict[tuple[str, str], _Node] = {}
         self._maps: dict[tuple[str, str], dict[str | None, _MetricMap]] = {}
@@ -170,6 +185,22 @@ class Sequencer:
             "rebirth_requests_blocked": c["rebirth_requests_blocked"],
             "duplicate_aliases": c["duplicate_aliases"],
         }
+
+    def edge_nodes(self) -> list[dict]:
+        """Each edge node the decisions know, and its devices: online or offline, since when (epoch ms) and what
+        changed it (``NBIRTH``, ``NDEATH``, ``DBIRTH``, ``DDEATH``, ``reorder timeout``)."""
+        out = []
+        for (group_id, edge_node_id), n in sorted(self._nodes.items()):
+            devices = [{"device_id": d, "online": online, "since": n.device_since.get(d, (None, None))[0],
+                        "changed_by": n.device_since.get(d, (None, None))[1]} for d, online in sorted(n.devices.items())]
+            out.append({"group_id": group_id, "edge_node_id": edge_node_id, "online": n.online, "since": n.since,
+                        "changed_by": n.changed_by, "bdseq": n.birth_bdseq, "devices": devices})
+        return out
+
+    def rebirth_requested(self, group_id: str, edge_node_id: str, now: float) -> None:
+        """A rebirth request sent outside these decisions (an operator's): it counts for the 5 s limit, so an
+        automatic one doesn't follow right behind it."""
+        self._last_request[(group_id, edge_node_id)] = now
 
     def keep_all_from_now(self) -> list[RawRow]:
         """Switch to ``keep_all`` (rebirths can't be requested any more): the held messages get their rows now, in
@@ -256,17 +287,19 @@ class Sequencer:
                 return self._drop(o, "invalid_birth")
             if decoded.get("timestamp") is None or bdseq is None:
                 return self._drop(o, "invalid_birth")
-            node.online, node.birth_bdseq, node.last_seq = True, bdseq, decoded.get("seq")
+            node.birth_bdseq, node.last_seq = bdseq, decoded.get("seq")
+            node.mark(True, decoded["timestamp"], "NBIRTH")
             self._births(key, None, decoded["metrics"], now)
             return [row]
         if kind == "DBIRTH":
             if node is None:
                 return self._drop(o, "unknown_node")
-            if device not in node.devices:
-                node.devices[device] = True         # Tahu quirk: a new device starts online, even if the seq check fails
+            birth_ms = _timestamp(decoded, row.inserted_at)
+            if device not in node.devices:          # Tahu quirk: a new device starts online, even if the seq check fails
+                node.mark_device(device, True, birth_ms, "DBIRTH")
             if not _seq_check(node, decoded.get("seq")):
                 return self._drop(o, "seq_check")
-            node.devices[device] = True
+            node.mark_device(device, True, birth_ms, "DBIRTH")
             self._births(key, device, decoded["metrics"], now)
             return [row]
         if kind == "NDATA":
@@ -291,9 +324,10 @@ class Sequencer:
                 return self._drop(o, "node_offline")
             if bdseq != node.birth_bdseq:
                 return self._drop(o, "bdseq_mismatch")
-            node.online = False
-            for d in node.devices:
-                node.devices[d] = False
+            node.mark(False, row.inserted_at, "NDEATH")     # received now: the host's time, not the payload's
+            for d, online in node.devices.items():
+                if online:                                  # one a DDEATH took offline keeps its time
+                    node.mark_device(d, False, row.inserted_at, "NDEATH")
             return [row]
         # DDEATH
         online = None if node is None else node.devices.get(device)
@@ -302,7 +336,7 @@ class Sequencer:
                               else "node_offline" if not node.online else "device_offline")
         if not _seq_check(node, decoded.get("seq")):
             return self._drop(o, "seq_check")
-        node.devices[device] = False
+        node.mark_device(device, False, _timestamp(decoded, row.inserted_at), "DDEATH")
         return [row]
 
     def _typed(self, o: Outcome) -> tuple[dict, dict, RawRow] | None:
@@ -348,8 +382,8 @@ class Sequencer:
             self.counters["rebirth_requests_rate_limited"] += 1
             return
         self._last_request[key] = now
-        if node is not None:
-            node.online = False                     # its data is dropped until the NBIRTH
+        if node is not None and node.online:        # its data is dropped until the NBIRTH (offline: keeps its time)
+            node.mark(False, int(self._clock() * 1000), "reorder timeout")
         self.counters["rebirth_requests"] += 1
         if self.block_auto_rebirth:
             self.counters["rebirth_requests_blocked"] += 1
@@ -366,6 +400,12 @@ class Sequencer:
 
 def _next(seq: int) -> int:
     return 0 if seq + 1 == 256 else seq + 1
+
+
+def _timestamp(decoded: dict, default: int) -> int:
+    """The payload's timestamp (epoch ms), or ``default`` (the receipt) without one."""
+    ts = decoded.get("timestamp")
+    return default if ts is None else ts
 
 
 def _seq_check(node: _Node, seq: int | None) -> bool:
