@@ -10,10 +10,15 @@
 # org.eclipse.tahu.message.SparkplugBPayloadDecoder, the JSON shape of the
 # org.eclipse.tahu.message.model classes (Jackson annotations and defaults),
 # org.eclipse.tahu.json.FileSerializer and org.eclipse.tahu.util.PayloadUtil.decompress.
-"""Sparkplug B payload bytes -> JSON identical to Eclipse Tahu's ``PayloadUtil.toJsonString``.
+"""Sparkplug B payload bytes -> JSON identical to Eclipse Tahu's ``PayloadUtil.toJsonString`` (+ Ignition's types).
 
 This is the JSON the connector writes to ``sparkplug_raw.msg``. Tahu's behaviour is copied as is, including its quirks
-(each marked ``Tahu quirk``); the one deliberate difference is marked ``Deviation``.
+(each marked ``Tahu quirk``); the one deliberate difference is marked ``Deviation``. On top of Tahu, the payloads of
+Ignition's MQTT Transmission decode as an Ignition-aware Java host decodes them (each marked ``Ignition``): the property
+types DataSet (16), Array (-10001) and Document (-10002) as their string value; a property that fails to decode left
+out, not its metric; a null property value left out of the JSON; the DataSet column type Color (-10000), each cell as
+Jackson writes a ``java.awt.Color``; metrics with ``metaData.contentType`` ``Alarm`` (a String) and
+``AlarmReconciliation`` (a DataSet). ``plain_tahu()`` turns these off (Tahu's JSON exactly, for its tests).
 
     to_tahu_json(payload: bytes, types=None) -> str     # raises on a payload Tahu can't decode or serialize
 
@@ -24,8 +29,11 @@ with its type from there; without them it decodes to null. ``decode``, ``decompr
 from __future__ import annotations
 
 import base64
+import contextlib
+import contextvars
 import logging
 import math
+import pathlib
 import struct
 import zlib
 from typing import Any
@@ -41,8 +49,8 @@ from sparkplug_connector.sparkplug.java_format import (
     json_string,
 )
 
-__all__ = ["to_tahu_json", "decode", "decompress", "dumps", "untyped", "MetricTypes", "TahuDecodeError", "UUID_COMPRESSED",
-           "METRIC_TYPE_CODES"]
+__all__ = ["to_tahu_json", "decode", "decompress", "dumps", "untyped", "plain_tahu", "MetricTypes", "TahuDecodeError",
+           "UUID_COMPRESSED", "METRIC_TYPE_CODES"]
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +77,24 @@ _METRIC_NAMES = {**_SCALAR_NAMES, 15: "UUID", 16: "DataSet", 17: "Bytes", 18: "F
                  27: "UInt16Array", 28: "UInt32Array", 29: "UInt64Array", 30: "FloatArray", 31: "DoubleArray",
                  32: "BooleanArray", 33: "StringArray", 34: "DateTimeArray"}
 _PROPERTY_NAMES = {**_SCALAR_NAMES, 20: "PropertySet", 21: "PropertySetList"}
+# Ignition: property types Sparkplug B doesn't define, each carried as the property's string value
+_IGNITION_PROPERTY_NAMES = {16: "DataSet", -10001: "Array", -10002: "Document"}
+_PROPERTY_NAMES.update(_IGNITION_PROPERTY_NAMES)
+_ALARM, _ALARM_RECONCILIATION = "Alarm", "AlarmReconciliation"     # Ignition: metaData.contentType of alarm metrics
+_COLOR = -10000                             # Ignition: the DataSet column type Color (a cell's int_value is its RGB)
+# The colorSpace of a java.awt.Color as Jackson writes it (Java 17's built-in sRGB profile, the same in every cell)
+_SRGB_COLOR_SPACE = pathlib.Path(__file__).with_name("srgb_color_space.json").read_text(encoding="utf-8")
+_ignition = contextvars.ContextVar("ignition", default=True)
+
+
+@contextlib.contextmanager
+def plain_tahu():
+    """Within it, payloads decode as Eclipse Tahu alone decodes them (no Ignition extensions)."""
+    token = _ignition.set(False)
+    try:
+        yield
+    finally:
+        _ignition.reset(token)
 METRIC_TYPE_CODES = {name: code for code, name in _METRIC_NAMES.items()}
 
 
@@ -109,6 +135,21 @@ class _File:
 
     def __init__(self, value: bytes):
         self.value = value
+
+
+class _Color:
+    """Ignition: a DataSet cell of type Color, a ``java.awt.Color(int rgb)``: the alpha bits are not read (always 255).
+    Jackson writes its bean properties in the order reflection lists them, which changes from one JVM start to the
+    next (so does the colorSpace's): the values are the same, the order is one of those Java writes."""
+    __slots__ = ("rgb",)
+
+    def __init__(self, value: int):
+        self.rgb = value & 0xFFFFFF
+
+    def json(self) -> str:
+        r, g, b = self.rgb >> 16, (self.rgb >> 8) & 0xFF, self.rgb & 0xFF
+        return (f'{{"red":{r},"green":{g},"blue":{b},"alpha":255,"colorSpace":{_SRGB_COLOR_SPACE},"transparency":1,'
+                f'"rgb":{_s32(0xFF000000 | self.rgb)}}}')
 
 
 class _PropertyMap:
@@ -172,6 +213,13 @@ def _decode_payload(raw: bytes, types: MetricTypes | None = None) -> dict[str, A
 
 def _metric(m: pb.Payload.Metric, types: MetricTypes | None = None, prefix: str = "") -> dict[str, Any] | None:
     """SparkplugBPayloadDecoder.convertMetric; ``prefix``: a template member's ``<template name>/``."""
+    content_type = _utf8(m.metadata.content_type) if m.HasField("metadata") and _ignition.get() else None
+    if content_type == _ALARM:
+        # Ignition: an alarm is a String from string_value, whatever its datatype (is_null not read)
+        return _metric_fields(m, "String", _utf8(m.string_value))
+    if content_type == _ALARM_RECONCILIATION:
+        # Ignition: the alarm states to reconcile, a DataSet from dataset_value, whatever its datatype
+        return _metric_fields(m, "DataSet", _dataset(m.dataset_value))
     type_code = _s32(m.datatype)
     type_name = _METRIC_NAMES.get(type_code)
     if type_name is None:
@@ -192,7 +240,11 @@ def _metric(m: pb.Payload.Metric, types: MetricTypes | None = None, prefix: str 
         type_name = _METRIC_NAMES[found]
         if type_code == 0:                          # getMetricValue takes the map's type for datatype 0 only
             type_code = found
-    value = _metric_value(m, type_code, types, prefix)
+    return _metric_fields(m, type_name, _metric_value(m, type_code, types, prefix))
+
+
+def _metric_fields(m: pb.Payload.Metric, type_name: str, value: Any) -> dict[str, Any]:
+    """A metric's JSON: its fields in Jackson's order around its data type and value."""
     out: dict[str, Any] = {}
     if m.HasField("name"):
         out["name"] = _utf8(m.name)
@@ -335,6 +387,28 @@ def _parameter_value(p: pb.Payload.Template.Parameter, t: int) -> Any:
 
 
 def _properties(ps: pb.Payload.PropertySet) -> _PropertyMap:
+    if not _ignition.get():
+        return _tahu_properties(ps)
+    entries = []
+    values = ps.values
+    for i, key in enumerate(ps.keys):
+        try:
+            if i >= len(values):
+                raise TahuDecodeError("PropertySet has fewer values than keys")
+            pv = values[i]
+            type_code = _s32(pv.type)
+            value = _property_value(pv, type_code)
+        except Exception as e:  # noqa: BLE001 - Ignition: a property that fails to decode is left out, not its metric
+            logger.warning("Failed to handle property conversion for %s - excluding from tag: %s", _utf8(key), e)
+            continue
+        entry = {"type": _PROPERTY_NAMES.get(type_code, "Unknown")}
+        if value is not None:                       # Ignition: a null value is left out
+            entry["value"] = value
+        entries.append((_utf8(key), entry))
+    return _PropertyMap(java_hashmap_order(entries))
+
+
+def _tahu_properties(ps: pb.Payload.PropertySet) -> _PropertyMap:
     entries = []
     values = ps.values
     for i, key in enumerate(ps.keys):
@@ -342,6 +416,11 @@ def _properties(ps: pb.Payload.PropertySet) -> _PropertyMap:
             raise TahuDecodeError("PropertySet has fewer values than keys")
         pv = values[i]
         type_code = _s32(pv.type)
+        if type_code in _IGNITION_PROPERTY_NAMES:
+            if not pv.is_null:
+                raise TahuDecodeError(f"Failed to decode: Unknown PropertyDataType {type_code}")
+            entries.append((_utf8(key), {"type": "Unknown", "value": None}))
+            continue
         entries.append((_utf8(key), {"type": _PROPERTY_NAMES.get(type_code, "Unknown"), "value": _property_value(pv, type_code)}))
     return _PropertyMap(java_hashmap_order(entries))
 
@@ -377,7 +456,7 @@ def _property_value(pv: pb.Payload.PropertyValue, t: int) -> Any:
         raise TahuDecodeError("Failed to decode: Invalid value for UInt32 datatype")
     if t == 8:
         return pv.long_value
-    if t in (12, 14):
+    if t in (12, 14) or t in _IGNITION_PROPERTY_NAMES:
         return _utf8(pv.string_value)
     if t == 20:
         return _properties(pv.propertyset_value)
@@ -411,7 +490,7 @@ def _dataset(ds: pb.Payload.DataSet) -> dict[str, Any]:
         "rows": rows,
         "numberOfColumns": columns,
         "columnNames": names,
-        "types": [_SCALAR_NAMES.get(c, "Unknown") for c in type_codes],
+        "types": ["Color" if c == _COLOR and _ignition.get() else _SCALAR_NAMES.get(c, "Unknown") for c in type_codes],
     }
 
 
@@ -451,6 +530,8 @@ def _dataset_value(t: int, v: pb.Payload.DataSet.DataSetValue) -> Any:
             return None
         text = _utf8(v.string_value)
         return None if text == "null" else text   # Tahu quirk: the string "null" is null
+    if t == _COLOR and _ignition.get():
+        return _Color(v.int_value) if v.HasField("int_value") else None
     raise TahuDecodeError(f"Failed to decode DataSetDataType: {t}")
 
 
@@ -589,6 +670,8 @@ def _write(value: Any, out: list[str]) -> None:
         out.append("]")
     elif isinstance(value, _Bytes):
         out.append('"' + base64.b64encode(value.value).decode("ascii") + '"')
+    elif isinstance(value, _Color):
+        out.append(value.json())
     elif isinstance(value, _File):
         text = base64.b64encode(value.value).decode("ascii")
         if len(text) > _FILE_BASE64_MAX_LENGTH:

@@ -10,7 +10,7 @@ Implements three roles:
 import logging
 from enum import Enum
 from functools import wraps
-from typing import List, Dict, Any, Set
+from typing import Any, Dict, List, Optional, Set
 
 from aiohttp import web
 
@@ -85,7 +85,12 @@ class User:
         self.groups = groups or []
         self.role = self._determine_role(groups or [], role_mappings or {}, default_role)
 
-        logger.info(f"User {email} assigned role: {self.role.value} (groups={self.groups})")
+    @classmethod
+    def restored(cls, email: str, name: Optional[str], groups: List[str], role: "Role") -> "User":
+        """The user of a session, with the role its login determined (not determined again)."""
+        user = cls.__new__(cls)
+        user.email, user.name, user.groups, user.role = email, name or email, list(groups or []), role
+        return user
 
     def _determine_role(
         self,

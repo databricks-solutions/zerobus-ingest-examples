@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings · Sparkplug Zerobus</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/pico.min.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="/js/theme.js"></script>
+  <script defer src="/js/api.js"></script>
+  <script defer src="/js/layout.js"></script>
+  <script defer src="/js/settings.js"></script>
+  <script defer src="/vendor/alpine-csp.min.js"></script>
+</head>
+<body data-page="settings">
+<main x-data="settingsPage">
+  <div class="page-head">
+    <p>The connector-wide settings, stored in <span class="mono" x-text="file"></span>. They take effect when the
+      bridge restarts. Sources and Zerobus have their own pages.</p>
+    <div class="actions"><button type="button" class="outline secondary small" @click="expandAll">Expand all</button></div>
+  </div>
+
+  <p aria-busy="true" x-show="loading">Loading settings…</p>
+
+  <form @submit.prevent="review" x-show="!loading" x-cloak novalidate>
+    <fieldset :disabled="!can('configure')">
+      <template x-for="section in sections" :key="section.name">
+        <details class="section" :open="isOpen(section)" @toggle="onToggle(section, $event)">
+          <summary><span x-text="section.name"></span><small x-text="sectionNote(section)"></small></summary>
+          <div class="fields">
+            <template x-for="field in section.fields" :key="field.key">
+              <div class="field">
+                <template x-if="isType(field, 'BOOLEAN')">
+                  <div>
+                    <label class="switch">
+                      <input type="checkbox" role="switch" :id="field.key" x-model="values[field.key]" @change="onInput(field.key)">
+                      <span x-text="field.label"></span>
+                    </label>
+                    <small class="help" x-text="help(field)"></small>
+                  </div>
+                </template>
+                <template x-if="!isType(field, 'BOOLEAN')">
+                  <div>
+                    <label :for="field.key"><span x-text="field.label"></span></label>
+                    <template x-if="isType(field, 'ENUM')">
+                      <select :id="field.key" x-model="values[field.key]" @change="onInput(field.key)" :aria-invalid="invalid(field)">
+                        <option value="" x-text="enumDefault(field)"></option>
+                        <template x-for="option in field.options" :key="option">
+                          <option :value="option" x-text="option"></option>
+                        </template>
+                      </select>
+                    </template>
+                    <template x-if="isNumber(field)">
+                      <input type="text" inputmode="decimal" :id="field.key" :placeholder="placeholder(field)"
+                             x-model="values[field.key]" @input="onInput(field.key)" :aria-invalid="invalid(field)">
+                    </template>
+                    <template x-if="isType(field, 'STRING')">
+                      <input type="text" :id="field.key" :placeholder="placeholder(field)" autocomplete="off"
+                             spellcheck="false" x-model="values[field.key]" @input="onInput(field.key)" :aria-invalid="invalid(field)">
+                    </template>
+                    <small class="error" x-show="hasError(field)" x-text="error(field)"></small>
+                    <small class="help" x-text="help(field)"></small>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </details>
+      </template>
+    </fieldset>
+
+    <div class="sticky-actions" x-show="can('configure')">
+      <span class="muted" x-text="changeSummary"></span>
+      <span class="form-error" x-show="formError" x-text="formError" role="alert"></span>
+      <button type="button" class="secondary outline" @click="discard" :disabled="!dirty">Discard</button>
+      <button type="submit" :disabled="!dirty || saving">Review and save…</button>
+    </div>
+  </form>
+
+  <dialog x-ref="review" @close="pendingChanges = []">
+    <article>
+      <header><h3>Save these settings?</h3></header>
+      <p>They are saved to the configuration file and take effect when the bridge restarts: Save and restart now, or
+        later from the banner or the Status page. A restart stops the sources for a moment (a primary host goes OFFLINE,
+        so its edge nodes keep their data; a plain subscriber misses what is published meanwhile).</p>
+      <div class="table-wrap">
+        <table class="diff">
+          <thead><tr><th>Setting</th><th>Was</th><th>Becomes</th></tr></thead>
+          <tbody>
+            <template x-for="c in pendingChanges" :key="c.key">
+              <tr>
+                <td><span x-text="c.label"></span><br><small class="muted" x-text="c.section"></small></td>
+                <td class="old" x-text="c.from"></td>
+                <td class="new" x-text="c.to"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <footer>
+        <button type="button" class="secondary outline" @click="closeReview">Cancel</button>
+        <button type="button" class="secondary" @click="save" :aria-busy="saving" :disabled="saving">Save</button>
+        <button type="button" x-show="canRestart" @click="saveAndRestart" :aria-busy="saving" :disabled="saving">Save and restart</button>
+      </footer>
+    </article>
+  </dialog>
+</main>
+</body>
+</html>

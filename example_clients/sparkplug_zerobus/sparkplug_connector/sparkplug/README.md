@@ -5,7 +5,8 @@ Ignition with MQTT Transmission publishing to a Chariot MQTT server, or any othe
 Sparkplug 3.0 edge) and writes **one row per Sparkplug message** to a Delta table through Zerobus.
 
 - **One row per message**: the `sparkplug_raw` table below, `msg` holding the payload as Eclipse Tahu's
-  JSON, byte for byte what Java Tahu produces; splitting it into metrics is left to SQL.
+  JSON, byte for byte what Java Tahu produces, with Ignition's extra types (below); splitting it into metrics is
+  left to SQL.
 - **Sparkplug primary host application**: with `primary_host_id` set, the edges buffer their data
   (store and forward) whenever the rows can't reach Databricks, and send it once they can again.
 - **Confirmed writes**: a row leaves the connector only once Zerobus has acknowledged it; an optional
@@ -33,6 +34,19 @@ DDEATH); with `sequence_handling: strict` (the default) only those its checks pa
 `spBv1.0/...` topics and payloads that can't be decoded. The payload is kept whole: splitting it into
 metrics is left to SQL. A metric sent without a datatype (allowed outside births) gets its type from the
 edge node's or device's last birth, as a Tahu host application decodes it.
+
+**Ignition's extra types.** Ignition's MQTT Transmission sends types Sparkplug B doesn't define; they decode as an
+Ignition-aware Java host decodes them (Eclipse Tahu alone drops the metric that carries one):
+
+| In the payload | In `msg` |
+|---|---|
+| Property types DataSet (16), Array (-10001), Document (-10002) | `{"type":"Document","value":"<the property's string>"}` (likewise `DataSet`, `Array`) |
+| DataSet column type Color (-10000) | `"types"` lists `"Color"`; each cell is a `java.awt.Color` as Jackson writes it: `red`, `green`, `blue`, `alpha` (always 255), `colorSpace` (Java's sRGB profile, ~9.5 KB, the same in every cell), `transparency`, `rgb`. Java orders these keys differently from one start to the next |
+| `metaData.contentType` `Alarm` | a `String` metric with the alarm's text, whatever its datatype |
+| `metaData.contentType` `AlarmReconciliation` | a `DataSet` metric, whatever its datatype |
+
+Also as such a host does: a property that can't be decoded is left out (not its metric), and a null property value
+is left out of the JSON (`{"type":"String"}`, where Tahu writes `"value":null`).
 
 ## Databricks setup
 
@@ -73,7 +87,8 @@ works: the schema prefix, the group id, the edge node id and whether to recreate
 SQL, not of the connector. Only NBIRTHs call it: the template definitions the views are built from come
 in the NBIRTH, and a DBIRTH is handled like data. The service principal then owns the
 `<prefix>_<group>_<edge node>` schemas it creates, so readers need `USE CATALOG, USE SCHEMA, SELECT` on
-the node catalog.
+the node catalog. The check after the call (`check_views`) reads the node catalog's `information_schema`, where the
+service principal sees the schemas and views it owns: no further grant.
 
 ## Configuration
 
@@ -99,6 +114,7 @@ sources:
       warehouse_id: ...                    # SQL warehouse; the Zerobus service principal runs the call
       procedures: [bridge_node_db.stage_db.create_edge_node_schema]   # catalog.schema.procedure, one or more
       schema_prefix: nb
+      check_views: true                    # after each call: the schema and the models' views exist (below)
     # security:                            # TLS (protocols/mqtt_security.py); on with mqtts:// or use_tls: true
     #   ca_cert_path: /certs/ca.pem        # a private CA (default: the system's)
     #   client_cert_path: /certs/client.pem   # client certificate and key: mutual TLS
@@ -126,7 +142,7 @@ zerobus:
 ```
 
 The package's `config/config.yaml` has this source as `sparkplug-example` (off): enable it and set its
-table, endpoint and credentials there (its header lists the environment variables). Run **exactly one** primary host per Primary Host ID: a second
+table, endpoint and MQTT user there (its header says what to set; the secrets come from the environment). Run **exactly one** primary host per Primary Host ID: a second
 one with the same id fights over STATE, and two connectors with different ids write every row twice.
 
 ### The edge (MQTT Transmission)
@@ -174,7 +190,36 @@ one with the same id fights over STATE, and two connectors with different ids wr
   out of order can be written twice after a crash (same `msg_id`).
 - **NBIRTH** (`edge_node_schemas.py`): once Zerobus has acknowledged an NBIRTH and it is readable in the
   table, each NBIRTH procedure is called, off the MQTT and Zerobus paths; NBIRTHs of one
-  edge node within 2 s make one call; a failed call is retried for ~5 minutes, then given up and counted.
+  edge node within 2 s make one call; one call at a time per edge node (an NBIRTH arriving during a call waits
+  for it, then runs); a failed call is retried for ~5 minutes, then given up and counted. Sources sharing a
+  table each call their own procedures for the NBIRTHs they received only (an NBIRTH no source received, the
+  diagnostics' or one replayed from the write-ahead log, goes to the table's first source with NBIRTH calls).
+  With `check_views` (on by default), after each call of a procedure named `create_edge_node_schema` (others in
+  the list are called, not checked) the connector looks in the procedure's catalog
+  (`information_schema`) for the edge node's schema, `<prefix>_<group>_<edge node>`, and for each model of the
+  NBIRTH (each top-level Template metric) its views `<model>`, `<model>_vw` and `<model>_asof_vw`, named as
+  `create_edge_node_schema` names them (lower case, each run of characters other than `[A-Za-z0-9]` -> `_`); an
+  NBIRTH without models needs the schema only. Something missing counts as a failed call: the procedure is called
+  again at the next retry. Switch it off for a `create_edge_node_schema` of your own that makes other objects.
+- **Diagnostics** (`diagnostics.py`, `diagnostics.enabled`, off by default): the connector's own edge nodes,
+  whose rows it writes into `zerobus.default_target` itself (nothing on MQTT), in the group `diagnostics.group_id`
+  (default `BRIDGE`), each with one device named after its model; templates version `v2.0.0`:
+
+  | Edge node (setting, default) | Device, instances | Metrics |
+  |---|---|---|
+  | `bridge_info_edge_node_id`, `Bridge Info` | `<bridge_model>` (`diagnostics.bridge_model`, default `BRIDGE`), `Core/<bridge_model>` | `<bridge_model> Version`, `PrimaryHostId` (the first source's), `ConnectedEdgeNodes`, `DisconnectedEdgeNodes`, `MQTTMessageCount`, `ModelCount`, `InstanceCount` |
+  | `edge_node_info_edge_node_id`, `Edge Node Info` | `EdgeNode`, `Core/EdgeNode-<edge node id>` per edge node seen | `GroupId`, `EdgeNodeId`, `Connected`, `ConnectDateTime`, `DisconnectDateTime`, `BirthCount`, `DeathCount`, `MQTTMessageCount` |
+  | `mqtt_client_info_edge_node_id`, `MQTT Client Info` | `MQTTClient`, `Core/MQTTClient` per Sparkplug source | `ClientID`, `Connected`, `ConnectDateTime`, `DisconnectDateTime`, `ServerUrl`, `ServerName` (the source's name) |
+
+  At start an NBIRTH (`bdSeq`, the template definitions) and a DBIRTH (the instances) per edge node, then every
+  10 s a DDATA per edge node if anything changed; no NDEATH. The JSON is the shape a Java host builds these payloads
+  in, its quirks kept: each metric stamped with the time it was built; dates as Java's `Date.toString()`
+  (`Tue Sep 29 11:48:45 EDT 2026`, the process's time zone; epoch 0 when unknown, `"null"` for an MQTT client never
+  connected); `Connected` a String in the EdgeNode definition and in MQTTClient, a Boolean in EdgeNode instances; the
+  Edge Node Info DBIRTH also carries an all-zero instance for itself. The counters follow the rows the sources hand
+  on (in `strict` mode, the messages the sequencing checks pass) and their connections. Their NBIRTHs call the NBIRTH
+  procedures like any edge node's; the check after the call needs their schema only. `GET /api/status`:
+  `diagnostics.rows_queued`.
 
 ## Rows and rebirth requests
 
@@ -217,8 +262,8 @@ Messages held for a missing `seq` are in memory only: a crash or stop loses them
 `payloads_undecodable`, `state_republished`, `rows_failed`, `queue_depth`, `queue_high_water`, `queue_dropped`,
 `zerobus_stream_open`, `rows_written`, `rows_too_large`, `rows_unconvertible`, `zerobus_failures`, `batch_in_flight`,
 `zerobus_failing_since`, `batch_pending_since`, `zerobus_last_success`, `last_error`; with
-`edge_node_schemas`: `nbirths_written`, `edge_node_schema_calls`, `..._failures`, `..._gave_up`,
-`..._pending`, `..._last_error`; with the write-ahead log: `wal_pending`, `wal_rows_appended`,
+`edge_node_schemas`: `nbirths_written`, `edge_node_schema_calls`, `..._checked` (calls whose schema and views were
+found), `..._failures`, `..._gave_up`, `..._pending`, `..._last_error`; with the write-ahead log: `wal_pending`, `wal_rows_appended`,
 `wal_rows_replayed`, `wal_rows_not_logged`, `wal_bytes`, `wal_failures`, `wal_last_error`; the sequence
 handling: `sequence_handling`, `messages_held`, `messages_reordered`, `messages_dropped` and `dropped` (by
 reason: `gap_timeout`, `pruned_at_nbirth`, `replaced_seq`, `no_seq`, `unknown_node`, `node_offline`,
@@ -240,16 +285,18 @@ so nothing is marked STALE here: that shows in the tables downstream.
 
 ## Web page
 
-The connector's web UI (the [repository README](../../README.md#web-ui)) lists the sources with their state
-(`yes · ONLINE`) and primary host, and adds, edits and deletes them (asking before a delete): endpoint,
-target table, client id, primary host id, STATE format, offline/online seconds, the NBIRTH settings
-(switch, SQL warehouse, schema prefix, the procedure), Rows (`sequence_handling`), Reordering timeout and
-Block auto rebirth; a running source's dropped messages show next to its state. The username, password, topics and TLS settings stay
-in the configuration file. A save restarts the source and writes the file the connector was started with
-(`--config`): fields the form doesn't show and unchanged fields stay as written there, `${env:...}`
-placeholders included; `GET /api/sources` masks passwords and secrets. **Edge nodes** lists each running
-source's edge nodes and devices (`GET /api/sparkplug/edge-nodes`, under *Health*) with a **Request rebirth**
-button per edge node.
+The connector's web page (the [repository README](../../README.md#web-ui)): **Sources** lists the sources with
+their state and role (primary host or plain subscriber), starts and stops them, and adds, edits and deletes them
+(asking before a delete): endpoint, username and password, client id, keep-alive, topics, target table, TLS files
+(CA, client certificate and key, from the **Certificates** page, and hostname checking), primary host id, STATE format,
+offline/online seconds, Rows (`sequence_handling`), Reordering timeout, Block auto rebirth, and the NBIRTH call
+(switch, SQL warehouse, procedures, schema prefix, the views check). A save restarts the source and writes the file
+the connector was started with (`--config`): fields the dialog doesn't show and unchanged fields stay as written
+there, `${env:...}` placeholders included; the password is the name of an environment variable (saved as
+`${env:NAME}`; the dialog shows whether it is set), never its value; `GET /api/sources` masks passwords and secrets. **Edge
+nodes** lists each running source's edge nodes and devices (`GET /api/sparkplug/edge-nodes`, under *Health*) with a
+**Request rebirth** button per edge node; **Status** shows each source's health. The diagnostics' settings are on
+**Settings**.
 
 ## Limitations
 
@@ -270,4 +317,6 @@ calls), `../protocols/sparkplug_client.py` (the source), `../core/confirmed_writ
 Tests: `tests/` (Eclipse Tahu's Java implementation as the reference, through JPype:
 `java_tahu.py`; a real Mosquitto for the primary host: `test_primary_host.py`; test-only dependencies in
 `tests/requirements.txt`). The payload fixtures are synthetic, shaped like MQTT Transmission's
-(`make_fixtures.py`); `make_expected.py` writes Java Tahu's JSON for them.
+(`make_fixtures.py`); `make_expected.py` writes Java Tahu's JSON for them. Ignition's extra types:
+`ignition_payloads.py`, with the JSON of a Java decoder that has them in `expected/ignition/`
+(`test_ignition_extensions.py`); the Tahu tests run with them off (`tahu_json.plain_tahu()`).

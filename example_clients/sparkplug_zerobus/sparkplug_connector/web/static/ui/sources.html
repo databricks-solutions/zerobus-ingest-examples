@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sources · Sparkplug Zerobus</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/pico.min.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="/js/theme.js"></script>
+  <script defer src="/js/api.js"></script>
+  <script defer src="/js/layout.js"></script>
+  <script defer src="/js/sources.js"></script>
+  <script defer src="/vendor/alpine-csp.min.js"></script>
+</head>
+<body data-page="sources">
+<main x-data="sourcesPage">
+  <div class="page-head">
+    <p>The MQTT servers the connector subscribes to, each with its Sparkplug settings. Changes apply at once and are
+      saved to the configuration file. Passwords come from environment variables.</p>
+    <div class="actions">
+      <button type="button" @click="add" :disabled="!can('write')"><span data-icon="plus"></span>Add source</button>
+    </div>
+  </div>
+
+  <p aria-busy="true" x-show="loading">Loading sources…</p>
+  <article x-show="!loading" x-cloak>
+    <div class="table-wrap" x-show="sources.length > 0">
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Endpoint</th><th>Role</th><th>Topics</th><th>Table</th><th>State</th>
+            <th class="actions"><span class="sr-only">Actions</span></th></tr>
+        </thead>
+        <tbody>
+          <template x-for="source in rows" :key="source.name">
+            <tr>
+              <td><strong x-text="source.name"></strong></td>
+              <td class="mono nowrap" x-text="source.endpoint"></td>
+              <td x-text="role(source)"></td>
+              <td><template x-for="t in topics(source)" :key="t"><span class="tag" x-text="t"></span></template></td>
+              <td class="mono nowrap" x-text="table(source)"></td>
+              <td class="nowrap"><span class="dot" :class="stateClass(source)"></span><span x-text="stateText(source)"></span></td>
+              <td class="actions">
+                <button type="button" class="icon-btn" x-show="!isRunning(source)" @click="start(source)" title="Start" aria-label="Start source" :disabled="!can('start_stop')"><span data-icon="play"></span></button>
+                <button type="button" class="icon-btn" x-show="isRunning(source)" @click="stop(source)" title="Stop" aria-label="Stop source" :disabled="!can('start_stop')"><span data-icon="stop"></span></button>
+                <button type="button" class="icon-btn" @click="edit(source)" title="Edit" aria-label="Edit source" :disabled="!can('write')"><span data-icon="edit"></span></button>
+                <button type="button" class="icon-btn" @click="askDelete(source)" title="Delete" aria-label="Delete source" :disabled="!can('delete')"><span data-icon="trash"></span></button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager" x-show="paged">
+      <span x-text="pageNote"></span>
+      <button type="button" class="outline secondary small" @click="prev" :disabled="!hasPrev">Previous</button>
+      <button type="button" class="outline secondary small" @click="next" :disabled="!hasNext">Next</button>
+    </div>
+    <p class="empty" x-show="sources.length === 0">No sources yet. Add the MQTT server your edge nodes publish to.</p>
+  </article>
+
+  <dialog x-ref="dialog">
+    <article>
+      <header><h3 x-text="title"></h3></header>
+      <form @submit.prevent="save" novalidate>
+        <div class="grid2">
+          <div>
+            <label for="s-name">Name<span class="req">*</span></label>
+            <input id="s-name" x-ref="name" x-model="form.name" placeholder="plant-mqtt" :disabled="!!editing" :aria-invalid="invalid('name')">
+            <small x-text="error('name') || 'Letters, digits, - and _'"></small>
+          </div>
+          <div>
+            <label for="s-endpoint">Endpoint<span class="req">*</span></label>
+            <input id="s-endpoint" x-model="form.endpoint" placeholder="mqtt://chariot:1883" spellcheck="false" :aria-invalid="invalid('endpoint')">
+            <small x-text="error('endpoint') || 'mqtt://host:1883, or mqtts://host:8883 for TLS'"></small>
+          </div>
+        </div>
+        <div class="grid3">
+          <div>
+            <label for="s-user">Username</label>
+            <input id="s-user" x-model="form.username" autocomplete="off" spellcheck="false">
+          </div>
+          <div>
+            <label for="s-pass">Password variable</label>
+            <input id="s-pass" x-model="form.password_env" placeholder="SPARKPLUG_MQTT_PASSWORD" autocomplete="off" spellcheck="false" :aria-invalid="invalid('password_env')">
+            <small x-text="error('password_env') || passwordNote"></small>
+          </div>
+          <div>
+            <label for="s-cid">Client ID</label>
+            <input id="s-cid" x-model="form.client_id" :placeholder="clientIdPlaceholder" spellcheck="false">
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="rows">
+            <label>Topics</label>
+            <template x-for="(topic, i) in form.topics" :key="i">
+              <div class="row">
+                <input x-model="form.topics[i]" placeholder="spBv1.0/#" spellcheck="false" aria-label="Topic filter">
+                <button type="button" class="icon-btn" @click="removeTopic(i)" aria-label="Remove topic"><span data-icon="x"></span></button>
+              </div>
+            </template>
+            <button type="button" class="outline secondary small" @click="addTopic"><span data-icon="plus"></span>Add</button>
+            <small class="error" x-show="error('topics')" x-text="error('topics')"></small>
+          </div>
+          <div>
+            <label for="s-keepalive">Keep-alive (s)</label>
+            <input id="s-keepalive" type="number" min="1" max="65535" x-model="form.keepalive" placeholder="60" :aria-invalid="invalid('keepalive')">
+            <small x-show="error('keepalive')" x-text="error('keepalive')"></small>
+            <label for="s-table">Target table</label>
+            <input id="s-table" x-model="form.target_table" placeholder="Zerobus's default table" spellcheck="false" :aria-invalid="invalid('target_table')">
+            <small x-text="error('target_table') || 'catalog.schema.table of its own'"></small>
+          </div>
+        </div>
+
+        <fieldset>
+          <legend><strong>TLS</strong> <small class="muted" x-text="tlsHint"></small></legend>
+          <div class="grid3">
+            <div>
+              <label for="s-ca">CA certificate</label>
+              <select id="s-ca" x-model="form.ca_cert_path">
+                <option value="">The system's trust store</option>
+                <template x-for="name in certOptions(form.ca_cert_path)" :key="name"><option :value="name" x-text="certLabel(name)"></option></template>
+              </select>
+            </div>
+            <div>
+              <label for="s-cert">Client certificate</label>
+              <select id="s-cert" x-model="form.client_cert_path" :aria-invalid="invalid('client_cert_path')">
+                <option value="">None</option>
+                <template x-for="name in certOptions(form.client_cert_path)" :key="name"><option :value="name" x-text="certLabel(name)"></option></template>
+              </select>
+              <small x-show="error('client_cert_path')" x-text="error('client_cert_path')"></small>
+            </div>
+            <div>
+              <label for="s-key">Client key</label>
+              <select id="s-key" x-model="form.client_key_path" :aria-invalid="invalid('client_key_path')">
+                <option value="">None</option>
+                <template x-for="name in certOptions(form.client_key_path)" :key="name"><option :value="name" x-text="certLabel(name)"></option></template>
+              </select>
+              <small x-show="error('client_key_path')" x-text="error('client_key_path')"></small>
+            </div>
+          </div>
+          <label class="switch"><input type="checkbox" role="switch" x-model="form.check_hostname"> Verify hostname</label>
+          <small class="muted">Files from the <a href="/certs.html">Certificates</a> page.</small>
+        </fieldset>
+
+        <fieldset>
+          <legend><strong>Sparkplug</strong></legend>
+          <div class="grid3">
+            <div>
+              <label for="s-phid">Primary host ID</label>
+              <input id="s-phid" x-model="form.primary_host_id" placeholder="empty: a plain subscriber" spellcheck="false">
+            </div>
+            <div>
+              <label for="s-state">STATE format</label>
+              <select id="s-state" x-model="form.state_format">
+                <option value="v3">v3 (spBv1.0/STATE/&lt;id&gt;)</option>
+                <option value="v2">v2 (STATE/&lt;id&gt;)</option>
+              </select>
+            </div>
+            <div class="grid2">
+              <div>
+                <label for="s-off">Offline after (s)</label>
+                <input id="s-off" type="number" min="0" x-model="form.offline_after_seconds" placeholder="30">
+              </div>
+              <div>
+                <label for="s-on">Online after (s)</label>
+                <input id="s-on" type="number" min="0" x-model="form.online_after_seconds" placeholder="30">
+              </div>
+            </div>
+          </div>
+          <div class="grid3">
+            <div>
+              <label for="s-seq">Rows</label>
+              <select id="s-seq" x-model="form.sequence_handling">
+                <option value="strict">strict: in seq order, drops until a rebirth</option>
+                <option value="keep_all">keep_all: a row for every message</option>
+              </select>
+            </div>
+            <div>
+              <label for="s-reorder">Reordering timeout (ms)</label>
+              <input id="s-reorder" type="number" min="1" x-model="form.sequence_reordering_timeout" placeholder="5000">
+            </div>
+            <div>
+              <label class="switch"><input type="checkbox" role="switch" x-model="form.block_auto_rebirth"> Block automatic rebirth requests</label>
+              <small class="muted">Only with keep_all: strict needs the rebirths.</small>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend><strong>On NBIRTH</strong></legend>
+          <label class="switch"><input type="checkbox" role="switch" x-model="form.nbirth_enabled"> Call the NBIRTH procedures</label>
+          <div class="grid3" x-show="form.nbirth_enabled">
+            <div>
+              <label for="s-wh">SQL warehouse ID<span class="req">*</span></label>
+              <input id="s-wh" x-model="form.warehouse_id" spellcheck="false" :aria-invalid="invalid('warehouse_id')">
+              <small x-show="error('warehouse_id')" x-text="error('warehouse_id')"></small>
+            </div>
+            <div>
+              <label for="s-proc">Procedures<span class="req">*</span></label>
+              <input id="s-proc" x-model="form.procedures" placeholder="catalog.schema.create_edge_node_schema" spellcheck="false" :aria-invalid="invalid('procedures')">
+              <small x-text="error('procedures') || 'catalog.schema.procedure, comma-separated'"></small>
+            </div>
+            <div>
+              <label for="s-prefix">Schema prefix</label>
+              <input id="s-prefix" x-model="form.schema_prefix" placeholder="nb" spellcheck="false">
+            </div>
+          </div>
+          <label class="switch" x-show="form.nbirth_enabled"><input type="checkbox" role="switch" x-model="form.check_views"> Check the schema and views after the call</label>
+        </fieldset>
+
+        <label class="switch"><input type="checkbox" role="switch" x-model="form.enabled"> Enabled (started with the connector)</label>
+        <p class="form-error" x-show="formError" x-text="formError" role="alert"></p>
+      </form>
+      <footer>
+        <button type="button" class="secondary outline" @click="close">Cancel</button>
+        <button type="button" @click="save" :aria-busy="saving" :disabled="saving">Save</button>
+      </footer>
+    </article>
+  </dialog>
+
+  <dialog x-ref="remove">
+    <article class="narrow">
+      <header><h3>Delete <span x-text="deleteName"></span>?</h3></header>
+      <p>The source stops and is removed from the configuration file.</p>
+      <footer>
+        <button type="button" class="secondary outline" @click="cancelDelete">Cancel</button>
+        <button type="button" class="danger" @click="confirmDelete">Delete</button>
+      </footer>
+    </article>
+  </dialog>
+</main>
+</body>
+</html>

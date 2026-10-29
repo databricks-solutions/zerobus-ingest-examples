@@ -265,7 +265,7 @@ class AuthenticationManager:
                 'role': user.role.value,
             }
 
-            logger.info(f"User {user_email} logged in successfully (role={user.role.value})")
+            logger.info(f"User {user_email} logged in successfully (role={user.role.value}, groups={user.groups})")
 
             # Redirect to home page
             return web.HTTPFound('/')
@@ -339,7 +339,7 @@ async def auth_middleware(request: web.Request, handler):
         return await handler(request)
 
     # Public endpoints (no authentication required)
-    public_paths = ['/login', '/login/callback', '/health', '/static']
+    public_paths = ['/login', '/login/callback', '/health', '/static', '/css/', '/js/', '/vendor/', '/img/']   # + the pages' files
     if any(request.path.startswith(path) for path in public_paths):
         return await handler(request)
 
@@ -368,16 +368,10 @@ async def auth_middleware(request: web.Request, handler):
             return web.HTTPFound('/login')
         raise web.HTTPUnauthorized(reason="Authentication required")
 
-    # Recreate User object and attach to request
+    # The session's user, with the role its login determined (each request: no role work, no log line)
     from sparkplug_connector.web.rbac import User, Role
-    request['user'] = User(
-        email=user_data['email'],
-        name=user_data.get('name', user_data['email']),
-        groups=user_data.get('groups', []),
-        role_mappings={},  # Not needed, role already determined
-        default_role='viewer'
-    )
-    request['user'].role = Role[user_data['role'].upper()]
+    request['user'] = User.restored(user_data['email'], user_data.get('name'), user_data.get('groups', []),
+                                    Role[user_data['role'].upper()])
 
     return await handler(request)
 
@@ -449,6 +443,7 @@ async def _authenticate_with_client_cert(request: web.Request, auth_manager) -> 
             role_mappings={},
             default_role=default_role
         )
+        logger.debug(f"Client certificate {cn}: role {user.role.value}")     # every request: debug only
 
         # Set role from mapping
         from sparkplug_connector.web.rbac import Role

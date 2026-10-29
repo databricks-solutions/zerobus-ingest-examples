@@ -264,6 +264,20 @@ def validate_config_value(value: Any, max_length: int = MAX_CONFIG_VALUE_LENGTH)
     return value
 
 
+TLS_SETTINGS = {'ca_cert_path', 'client_cert_path', 'client_key_path', 'check_hostname', 'use_tls'}
+
+
+def _valid_topic_filter(topic: str) -> bool:
+    """An MQTT topic filter: non-empty, '+' a whole level, '#' a whole level and the last one."""
+    if not topic or len(topic) > 65535 or '\x00' in topic:
+        return False
+    levels = topic.split('/')
+    for i, level in enumerate(levels):
+        if ('+' in level and level != '+') or ('#' in level and (level != '#' or i != len(levels) - 1)):
+            return False
+    return True
+
+
 def validate_source_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Validate complete source configuration.
@@ -290,15 +304,50 @@ def validate_source_config(config: Dict[str, Any]) -> Dict[str, Any]:
     validated['protocol'] = validate_protocol(config['protocol'])
     validated['endpoint'] = validate_endpoint(config['endpoint'])
 
-    # Validate optional fields
-    # (sparkplug/README.md); the username, password, topics and TLS settings stay in the config file
+    # Validate optional fields (sparkplug/README.md)
     optional_fields = ['enabled', 'target_table', 'client_id', 'primary_host_id', 'state_format',
                        'offline_after_seconds', 'online_after_seconds', 'edge_node_schemas',
-                       'sequence_handling', 'sequence_reordering_timeout', 'block_auto_rebirth']
+                       'sequence_handling', 'sequence_reordering_timeout', 'block_auto_rebirth',
+                       'username', 'password', 'keepalive', 'topics', 'security']
 
     for field in optional_fields:
         if field in config:
             validated[field] = validate_config_value(config[field])
+
+    # The MQTT connection: credentials, keep-alive, topic filters, TLS files
+    for field in ('username', 'password'):
+        if validated.get(field) is not None and not isinstance(validated[field], str):
+            raise ValidationError(f"{field}: text")
+    keepalive = validated.get('keepalive')
+    if keepalive not in (None, ''):
+        if isinstance(keepalive, bool) or not str(keepalive).strip().isdigit() or not 1 <= int(keepalive) <= 65535:
+            raise ValidationError("Keep-alive: whole seconds from 1 to 65535")
+        validated['keepalive'] = int(keepalive)
+    topics = validated.get('topics')
+    if topics is not None:
+        if isinstance(topics, str):
+            topics = [t.strip() for t in topics.split(',')]
+        if not isinstance(topics, list) or not topics:
+            raise ValidationError("Topics: at least one MQTT topic filter")
+        for topic in topics:
+            if not isinstance(topic, str) or not _valid_topic_filter(topic.strip()):
+                raise ValidationError(f"Topics: not an MQTT topic filter: {topic!r}")
+        validated['topics'] = [t.strip() for t in topics]
+    security = validated.get('security')
+    if security is not None:
+        if not isinstance(security, dict):
+            raise ValidationError("TLS settings: an object")
+        unknown = set(security) - TLS_SETTINGS
+        if unknown:
+            raise ValidationError(f"TLS settings: unknown {', '.join(sorted(unknown))}")
+        for key in ('ca_cert_path', 'client_cert_path', 'client_key_path'):
+            if security.get(key) is not None and not isinstance(security[key], str):
+                raise ValidationError(f"TLS settings: {key} is a file name or path")
+        for key in ('check_hostname', 'use_tls'):
+            if key in security and not isinstance(security[key], bool):
+                raise ValidationError(f"TLS settings: {key} is true or false")
+        if bool(security.get('client_cert_path')) != bool(security.get('client_key_path')):
+            raise ValidationError("TLS settings: a client certificate needs its key, and the other way round")
 
     # The source's own Zerobus table (core/targets.py); empty: the default table
     if str(validated.get('target_table') or '').strip():
@@ -318,6 +367,8 @@ def validate_source_config(config: Dict[str, Any]) -> Dict[str, Any]:
             raise ValidationError("NBIRTH procedure: at least one catalog.schema.procedure when the call is on")
         if ens.get('enabled') is True and not str(ens.get('warehouse_id') or '').strip():
             raise ValidationError("SQL warehouse ID: needed when the NBIRTH call is on")
+        if 'check_views' in ens and not isinstance(ens['check_views'], bool):
+            raise ValidationError("Check the views after the NBIRTH call: true or false")
 
     # Sparkplug B primary host: refused here, not only when the source starts with it
     state_format = str(validated.get('state_format') or '').strip().lower()
