@@ -1,8 +1,8 @@
 """The bridge: Sparkplug B sources to Databricks tables through Zerobus.
 
-    Sparkplug sources → one queue per target table (+ write-ahead log) → ConfirmedWriter → Zerobus → sparkplug_raw
+    Sparkplug sources → one queue per target table (+ write-ahead log) → ConfirmedWriter → Zerobus → raw_messages
 
-Each Sparkplug message becomes one ``sparkplug_raw`` row, written unchanged. Every table's batches are kept
+Each Sparkplug message becomes one ``raw_messages`` row, written unchanged. Every table's batches are kept
 until Zerobus acknowledges them (``core/confirmed_writer.py``), so a primary host can follow its table's writer:
 ONLINE while Databricks accepts the rows, OFFLINE (the edges buffer) otherwise (``sparkplug/host.py``). After
 an NBIRTH is written, the source's NBIRTH procedures are called (``sparkplug/edge_node_schemas.py``). With
@@ -738,7 +738,7 @@ class Bridge:
         logger.debug(f"Source stats: {stats}")
 
     def _to_zerobus_message(self, record: Dict[str, Any]) -> Dict[str, Any]:
-        """A queued row as its Zerobus record: the sparkplug_raw columns."""
+        """A queued row as its Zerobus record: the raw_messages columns."""
         return {column: record[column] for column in raw_row.COLUMNS}
 
     async def stop(self):

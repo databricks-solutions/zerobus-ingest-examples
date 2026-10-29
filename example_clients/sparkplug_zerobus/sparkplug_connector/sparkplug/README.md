@@ -4,7 +4,7 @@ A `sparkplug` source connects the connector to an MQTT server that carries **Spa
 Ignition with MQTT Transmission publishing to a Chariot MQTT server, or any other
 Sparkplug 3.0 edge) and writes **one row per Sparkplug message** to a Delta table through Zerobus.
 
-- **One row per message**: the `sparkplug_raw` table below, `msg` holding the payload as Eclipse Tahu's
+- **One row per message**: the `raw_messages` table below, `msg` holding the payload as Eclipse Tahu's
   JSON, byte for byte what Java Tahu produces, with Ignition's extra types (below); splitting it into metrics is
   left to SQL.
 - **Sparkplug primary host application**: with `primary_host_id` set, the edges buffer their data
@@ -53,7 +53,11 @@ is left out of the JSON (`{"type":"String"}`, where Tahu writes `"value":null`).
 The table (Unity Catalog; the names below are examples, any names work):
 
 ```sql
-CREATE TABLE IF NOT EXISTS bridge_stage_db.stage_db.sparkplug_raw (
+-- or an existing catalog and schema (then change the names below and in the configuration)
+CREATE CATALOG IF NOT EXISTS sparkplug;
+CREATE SCHEMA IF NOT EXISTS sparkplug.bronze;
+
+CREATE TABLE IF NOT EXISTS sparkplug.bronze.raw_messages (
   msg_id        STRING,
   msg_topic     STRING,
   namespace     STRING,
@@ -72,9 +76,9 @@ A service principal with an OAuth secret writes it through Zerobus (the Zerobus 
 `https://<workspace-id>.zerobus.<region>.cloud.databricks.com`):
 
 ```sql
-GRANT USE CATALOG ON CATALOG bridge_stage_db TO `<application id>`;
-GRANT USE SCHEMA ON SCHEMA bridge_stage_db.stage_db TO `<application id>`;
-GRANT MODIFY, SELECT ON TABLE bridge_stage_db.stage_db.sparkplug_raw TO `<application id>`;
+GRANT USE CATALOG ON CATALOG sparkplug TO `<application id>`;
+GRANT USE SCHEMA ON SCHEMA sparkplug.bronze TO `<application id>`;
+GRANT MODIFY, SELECT ON TABLE sparkplug.bronze.raw_messages TO `<application id>`;
 ```
 
 (`SELECT` lets the NBIRTH call check that the birth has landed.) For the **NBIRTH call** the same
@@ -97,7 +101,7 @@ sources:
   - name: chariot-sparkplug
     protocol: sparkplug
     endpoint: mqtt://chariot:1883          # or mqtts://host:8883 (TLS: security:, below)
-    # target_table: bridge_stage_db.stage_db.sparkplug_raw   # its own table; default: zerobus.default_target
+    # target_table: sparkplug.bronze.raw_messages_plant2   # its own table; default: zerobus.default_target
     client_id: databricks-sparkplug        # fixed and unique
     username: ...                          # ACL: subscribe spBv1.0/#, publish its own STATE topic and spBv1.0/+/NCMD/+
     password: ...
@@ -112,7 +116,7 @@ sources:
     edge_node_schemas:                     # on NBIRTH: CALL <procedure>(prefix, group, edge, false)
       enabled: true
       warehouse_id: ...                    # SQL warehouse; the Zerobus service principal runs the call
-      procedures: [bridge_node_db.stage_db.create_edge_node_schema]   # catalog.schema.procedure, one or more
+      procedures: [sparkplug.bronze.create_edge_node_schema]   # catalog.schema.procedure, one or more
       schema_prefix: nb
       check_views: true                    # after each call: the schema and the models' views exist (below)
     # security:                            # TLS (protocols/mqtt_security.py); on with mqtts:// or use_tls: true
@@ -136,9 +140,9 @@ zerobus:
   # batch: {max_records: 500, linger_seconds: 0.2}
   default_target:                          # the table above
     workspace_host: https://<workspace>.cloud.databricks.com
-    catalog: bridge_stage_db
-    schema: stage_db
-    table: sparkplug_raw
+    catalog: sparkplug
+    schema: bronze
+    table: raw_messages
 ```
 
 The package's `config/config.yaml` has this source as `sparkplug-example` (off): enable it and set its

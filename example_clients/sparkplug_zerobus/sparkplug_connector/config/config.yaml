@@ -1,5 +1,5 @@
 # The connector's configuration (the default one: edit it in place), then:
-#   1. Under zerobus:, set zerobus_endpoint, default_target (your workspace and sparkplug_raw table),
+#   1. Under zerobus:, set zerobus_endpoint, default_target (your workspace and raw_messages table),
 #      auth.client_id (a service principal with USE CATALOG, USE SCHEMA, MODIFY and SELECT on the table) and
 #      enabled: true (off here, so a first start tries no table).
 #   2. Under sources:, set the example source's endpoint and username, enabled: true (it is off), and
@@ -85,7 +85,7 @@ web_ui:
       preload: false
     require_client_cert: false
 sources:
-# One row per Sparkplug B message in sparkplug_raw; optionally the edges' primary host and a procedure call
+# One row per Sparkplug B message in raw_messages; optionally the edges' primary host and a procedure call
 # per NBIRTH (sparkplug_connector/sparkplug/README.md)
 - name: sparkplug-example
   protocol: sparkplug
@@ -112,7 +112,7 @@ sources:
   edge_node_schemas:
     enabled: false
     warehouse_id: ''
-    procedures: [bridge_node_db.stage_db.create_edge_node_schema]
+    procedures: [sparkplug.bronze.create_edge_node_schema]
     schema_prefix: nb
     check_views: true              # after each create_edge_node_schema call: the edge node's schema and views exist (else retried)
 zerobus:
@@ -120,9 +120,9 @@ zerobus:
   zerobus_endpoint: ''             # <workspace-id>.zerobus.<region>.cloud.databricks.com
   default_target:                  # the table of every source without a target_table of its own
     workspace_host: ''             # https://<workspace>.cloud.databricks.com
-    catalog: bridge_stage_db
-    schema: stage_db
-    table: sparkplug_raw
+    catalog: sparkplug
+    schema: bronze
+    table: raw_messages
   auth:
     # or the encrypted credential store: ${credential:zerobus.client_id} / ${credential:zerobus.client_secret}
     # (python -m sparkplug_connector.core.credential_manager store ...)

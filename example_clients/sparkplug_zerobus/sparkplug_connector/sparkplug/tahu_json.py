@@ -12,7 +12,7 @@
 # org.eclipse.tahu.json.FileSerializer and org.eclipse.tahu.util.PayloadUtil.decompress.
 """Sparkplug B payload bytes -> JSON identical to Eclipse Tahu's ``PayloadUtil.toJsonString`` (+ Ignition's types).
 
-This is the JSON the connector writes to ``sparkplug_raw.msg``. Tahu's behaviour is copied as is, including its quirks
+This is the JSON the connector writes to ``raw_messages.msg``. Tahu's behaviour is copied as is, including its quirks
 (each marked ``Tahu quirk``); the one deliberate difference is marked ``Deviation``. On top of Tahu, the payloads of
 Ignition's MQTT Transmission decode as an Ignition-aware Java host decodes them (each marked ``Ignition``): the property
 types DataSet (16), Array (-10001) and Document (-10002) as their string value; a property that fails to decode left
