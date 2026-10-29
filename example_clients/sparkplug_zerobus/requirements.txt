@@ -1,5 +1,4 @@
 aiohttp==3.9.5
-aiohttp-cors==0.7.0
 aiomqtt==2.0.1
 PyYAML==6.0.2
 databricks-zerobus-ingest-sdk==1.10.0

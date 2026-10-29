@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Certificates · Sparkplug Zerobus</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/pico.min.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="/js/theme.js"></script>
+  <script defer src="/js/api.js"></script>
+  <script defer src="/js/layout.js"></script>
+  <script defer src="/js/certs.js"></script>
+  <script defer src="/vendor/alpine-csp.min.js"></script>
+</head>
+<body data-page="certs">
+<main x-data="certsPage">
+  <div class="page-head">
+    <p>The MQTT TLS files the sources can use (CA certificates, client certificates and keys). The Sources page's TLS
+      pickers offer the files uploaded here; they are kept in <span class="mono" x-text="directory"></span>.</p>
+  </div>
+
+  <div class="dropzone" :class="{ over: over }" role="button" tabindex="0" :aria-busy="uploading"
+       @click="choose" @keydown.enter.prevent="choose" @keydown.space.prevent="choose"
+       @dragover.prevent="onDragOver" @dragleave="onDragLeave" @drop.prevent="onDrop($event)">
+    <span data-icon="upload"></span>
+    <strong>Drop a file here, or click to choose one</strong>
+    <small>Up to 1 MB. Names may use letters, digits, <span class="mono">_</span>, <span class="mono">-</span> and one
+      <span class="mono">.</span> (for example <span class="mono">plant-ca.pem</span>).</small>
+    <input type="file" x-ref="input" @change="onPick($event)">
+  </div>
+
+  <div class="toolbar">
+    <input type="search" placeholder="Search files" aria-label="Search files" x-model="search">
+    <small class="muted" x-text="countNote"></small>
+  </div>
+
+  <p aria-busy="true" x-show="loading">Loading files…</p>
+  <div class="table-wrap" x-show="!loading && filtered.length > 0" x-cloak>
+    <table>
+      <thead><tr><th>File name</th><th>Size</th><th>Modified</th><th>Used by</th><th class="actions"><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+        <template x-for="file in filtered" :key="file.name">
+          <tr>
+            <td class="mono" x-text="file.name"></td>
+            <td class="nowrap" x-text="size(file)"></td>
+            <td class="nowrap" x-text="modified(file)"></td>
+            <td x-text="usedBy(file)"></td>
+            <td class="actions">
+              <button type="button" class="icon-btn" @click="askDelete(file)" title="Delete" aria-label="Delete file" :disabled="!can('delete')"><span data-icon="trash"></span></button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+  <p class="empty" x-show="!loading && files.length === 0" x-cloak>No files uploaded yet.</p>
+  <p class="empty" x-show="!loading && files.length > 0 && filtered.length === 0" x-cloak>No file matches the search.</p>
+
+  <dialog x-ref="overwrite">
+    <article class="narrow">
+      <header><h3>Replace <span class="mono" x-text="pendingName"></span>?</h3></header>
+      <p>A file with this name already exists and will be overwritten.</p>
+      <p x-show="pendingUsers"><strong>In use by:</strong> <span x-text="pendingUsers"></span>. Stop and start those sources to use the new file.</p>
+      <footer>
+        <button type="button" class="secondary outline" @click="cancelOverwrite">Cancel</button>
+        <button type="button" @click="confirmOverwrite">Replace</button>
+      </footer>
+    </article>
+  </dialog>
+
+  <dialog x-ref="remove">
+    <article class="narrow">
+      <header><h3>Delete <span class="mono" x-text="deleteName"></span>?</h3></header>
+      <p>The file is removed from the certificates directory.</p>
+      <p x-show="deleteUsers"><strong>Still referenced by:</strong> <span x-text="deleteUsers"></span>. Those settings
+        will fail until you pick another file.</p>
+      <footer>
+        <button type="button" class="secondary outline" @click="cancelDelete">Cancel</button>
+        <button type="button" class="danger" @click="confirmDelete">Delete</button>
+      </footer>
+    </article>
+  </dialog>
+</main>
+</body>
+</html>

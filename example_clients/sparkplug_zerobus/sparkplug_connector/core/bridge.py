@@ -1,11 +1,13 @@
 """The bridge: Sparkplug B sources to Databricks tables through Zerobus.
 
-    Sparkplug sources → one queue per target table (+ write-ahead log) → ConfirmedWriter → Zerobus → sparkplug_raw
+    Sparkplug sources → one queue per target table (+ write-ahead log) → ConfirmedWriter → Zerobus → raw_messages
 
-Each Sparkplug message becomes one ``sparkplug_raw`` row, written unchanged. Every table's batches are kept
+Each Sparkplug message becomes one ``raw_messages`` row, written unchanged. Every table's batches are kept
 until Zerobus acknowledges them (``core/confirmed_writer.py``), so a primary host can follow its table's writer:
 ONLINE while Databricks accepts the rows, OFFLINE (the edges buffer) otherwise (``sparkplug/host.py``). After
-an NBIRTH is written, the source's NBIRTH procedures are called (``sparkplug/edge_node_schemas.py``).
+an NBIRTH is written, the source's NBIRTH procedures are called (``sparkplug/edge_node_schemas.py``). With
+``diagnostics.enabled``, the connector's own diagnostics edge nodes go into the default table too
+(``sparkplug/diagnostics.py``).
 """
 
 import asyncio
@@ -15,21 +17,27 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from sparkplug_connector.protocols.base import ProtocolClient
 from sparkplug_connector.protocols.factory import create_protocol_client
 from sparkplug_connector.core.backpressure import BackpressureManager
 from sparkplug_connector.core.confirmed_writer import ConfirmedWriter, ZerobusRowStreams, convert_rows, take_from_backpressure
 from sparkplug_connector.core.wal import SEQ_FIELD, WriteAheadLog
+from sparkplug_connector.core import __version__
+from sparkplug_connector.core.cert_store import certs_dir, resolve_tls_paths
 from sparkplug_connector.core import targets as source_tables
 from sparkplug_connector.sparkplug import raw_row
+from sparkplug_connector.sparkplug.diagnostics import REFRESH_S, Diagnostics, Tracker
 from sparkplug_connector.sparkplug.edge_node_schemas import BirthNotifier, DatabricksSql, nbirth_procedures, quoted_table
 from sparkplug_connector.sparkplug.host import HostState, HostSupervisor
 
 logger = logging.getLogger(__name__)
 
 HEALTHY_SESSION_S = 60.0   # a source connection that lasted this long starts its reconnect backoff again
+NBIRTH_SOURCES_KEPT = 10000   # NBIRTH msg_ids remembered with their source, for the NBIRTH callers (_owns_nbirth)
+# (an NBIRTH forgotten before Zerobus acknowledged it goes to the first caller on its writer: with sources sharing a
+# table, more than this many NBIRTHs awaiting Zerobus at once could send one to the other source's procedures)
 
 
 def _iso_ms(ms: Optional[float]) -> Optional[str]:
@@ -105,10 +113,28 @@ class Bridge:
         self.host_tasks: Dict[str, asyncio.Task] = {}
         self.birth_notifiers: Dict[str, BirthNotifier] = {}
         self._notifier_writers: Dict[str, ConfirmedWriter] = {}
+        # msg_id -> the source that handed the NBIRTH on (its caller handles it; the latest NBIRTH_SOURCES_KEPT)
+        self._nbirth_sources: "collections.OrderedDict[str, str]" = collections.OrderedDict()
 
         # Source clients
         self.clients: Dict[str, ProtocolClient] = {}
         self.client_tasks: Dict[str, asyncio.Task] = {}
+        # per source, while its MQTT connection fails (e.g. a refused login): the last error, since when (epoch s)
+        self.mqtt_errors: Dict[str, Dict[str, Any]] = {}
+
+        # diagnostics: the connector's own edge nodes, rows into the default table (off by default)
+        self.diagnostics_config = config.get('diagnostics') or {}
+        self.diagnostics: Optional[Diagnostics] = None
+        self.diagnostics_task: Optional[asyncio.Task] = None
+        self.diagnostics_rows = 0
+        if _enabled(self.diagnostics_config.get('enabled', False)):
+            tracker = Tracker()
+            for source in self.sources:
+                if source.get('enabled', True) and source.get('protocol', 'sparkplug') == 'sparkplug':
+                    name = source.get('name', '')
+                    tracker.add_client(name, str(source.get('client_id') or f'dbx-{name}'), str(source.get('endpoint') or ''))
+            self.diagnostics = Diagnostics(tracker, self.diagnostics_config, version=__version__,
+                                           primary_host_id=self._primary_host_id)
 
         # Reconnection settings
         self.reconnect_enabled = True
@@ -129,6 +155,7 @@ class Bridge:
         self.running = False
         self._starting = False
         self._start_lock = asyncio.Lock()
+        self.started_at: Optional[float] = None    # epoch s: the counters count from here (a restart: a new bridge)
 
         logger.info(f"Bridge initialized: {len(self.sources)} sources configured")
 
@@ -153,9 +180,12 @@ class Bridge:
             self.zerobus_enabled = True
         else:
             logger.info("ZeroBus disabled - data collection only mode")
+        if self.diagnostics is not None and self.diagnostics_task is None:
+            self.diagnostics_task = asyncio.create_task(self._run_diagnostics())
 
         self.running = True
         self._starting = False
+        self.started_at = time.time()
         logger.info("✓ Bridge infrastructure started")
 
     async def start(self):
@@ -195,6 +225,9 @@ class Bridge:
                 continue
             if target_config.get('workspace_host'):
                 targets[self._get_target_id(target_config)] = target_config
+        default_target = self.zerobus_config.get('default_target') or {}
+        if self.diagnostics is not None and default_target.get('workspace_host'):
+            targets.setdefault(self._get_target_id(default_target), default_target)     # the diagnostics' table
 
         for target_id, target_config in targets.items():
             await self._create_target(target_id, target_config)
@@ -362,6 +395,8 @@ class Bridge:
             source_config: Source configuration dict
         """
         source_name = source_config.get('name', 'unknown')
+        if self._shutdown:      # stopping (or stopped): nothing would stop this client again
+            raise RuntimeError(f"The bridge is stopping: source {source_name} not started")
         source_tables.target_config(source_config, self.zerobus_config)   # ValueError: target_table malformed
         await self._ensure_target(source_config)
 
@@ -369,12 +404,14 @@ class Bridge:
             protocol_type=source_config.get('protocol', 'sparkplug'),
             source_name=source_name,
             endpoint=source_config['endpoint'],
-            config=source_config,
+            config=resolve_tls_paths(source_config, certs_dir(self.config)),   # uploaded files by bare name
             on_record=lambda record: self._on_record(record, source_name),
             on_stats=self._on_stats
         )
 
         self.clients[source_name] = client
+        if self.diagnostics is not None:
+            self.diagnostics.tracker.add_client(source_name, str(getattr(client, 'client_id', '') or ''), str(client.endpoint))
         self._attach_sparkplug(source_name, source_config, client)
 
         task = asyncio.create_task(self._client_lifecycle(source_name, client))
@@ -439,7 +476,10 @@ class Bridge:
                 return
             sql = DatabricksSql(table.workspace_url, table.client_id, table.client_secret, warehouse_id)
             notifier = BirthNotifier(sql, table.full_table_name, procedures,
-                                     prefix=str(schemas.get('schema_prefix') or '').strip() or 'nb')
+                                     prefix=str(schemas.get('schema_prefix') or '').strip() or 'nb',
+                                     check_views=_enabled(schemas.get('check_views', True)),
+                                     schema_only_groups=frozenset({self.diagnostics.group_id}) if self.diagnostics else frozenset(),
+                                     owns=self._owns_nbirth(source_name))
             writer.add_listener(notifier.accept)
             self.birth_notifiers[source_name] = notifier
             self._notifier_writers[source_name] = writer
@@ -460,7 +500,9 @@ class Bridge:
                 logger.info(f"[{source_name}] Connecting to {client.endpoint}...")
                 await client.connect()
                 logger.info(f"[{source_name}] ✓ Connected")
+                self.mqtt_errors.pop(source_name, None)
                 connected_at = time.monotonic()
+                self._diagnose_client(source_name, True)
 
                 logger.info(f"[{source_name}] Starting data collection...")
                 await client.subscribe()
@@ -471,12 +513,15 @@ class Bridge:
 
                 # Cleanup on shutdown
                 await client.disconnect()
+                self._diagnose_client(source_name, False)
                 reconnect_delay = self.reconnect_initial_delay_sec
 
                 if self._shutdown:
                     break
 
             except Exception as e:
+                if connected_at is not None:
+                    self._diagnose_client(source_name, False)
                 if self._shutdown or source_name in self._stopping_sources:
                     logger.info(f"[{source_name}] subscription ended: the source is stopping")
                     break
@@ -486,6 +531,9 @@ class Bridge:
                     logger.info(f"[{source_name}] disconnected by the connector ({e})")
                 else:
                     logger.error(f"[{source_name}] Error: {e}")
+                    now = time.time()
+                    since = (self.mqtt_errors.get(source_name) or {}).get('since', now)
+                    self.mqtt_errors[source_name] = {'message': f"{type(e).__name__}: {e}", 'since': since, 'at': now}
 
                 # Cleanup
                 try:
@@ -588,11 +636,61 @@ class Bridge:
             except Exception as e:
                 logger.warning(f"Error closing source {source_name}: {e}")
         self.clients.pop(source_name, None)
+        self.mqtt_errors.pop(source_name, None)
         return {'status': 'ok', 'message': f"Source stopped: {source_name}"}
 
     def _on_record(self, row: "raw_row.RawRow", source_name: Optional[str] = None):
         """A Sparkplug row from a source: queued for its target table unchanged (no source: the default table)."""
+        if source_name is not None and row.message_type == 'NBIRTH':
+            self._nbirth_sources[row.msg_id] = source_name
+            if len(self._nbirth_sources) > NBIRTH_SOURCES_KEPT:
+                self._nbirth_sources.popitem(last=False)
+        if self.diagnostics is not None:
+            try:
+                self.diagnostics.tracker.on_row(row)
+            except Exception as e:  # noqa: BLE001 - the counters must not cost the row
+                logger.warning(f"[{source_name}] diagnostics counters: {type(e).__name__}: {e}")
         self._on_raw_row(row, self._queue_for_source(source_name))
+
+    def _owns_nbirth(self, source_name: str) -> Callable[[Dict[str, Any]], bool]:
+        """Whether an acknowledged NBIRTH row is for this source's caller: the writer reports every row of its
+        table, so with sources sharing a table each caller takes the NBIRTHs its source handed on; one no source
+        handed on (the diagnostics', a write-ahead log replay) goes to the first caller on that writer."""
+        def owns(row: Dict[str, Any]) -> bool:
+            owner = self._nbirth_sources.get(row.get('msg_id'))
+            if owner is not None:
+                return owner == source_name
+            writer = self._notifier_writers.get(source_name)
+            return next((n for n, w in self._notifier_writers.items() if w is writer), None) == source_name
+        return owns
+
+    def _diagnose_client(self, source_name: str, connected: bool) -> None:
+        if self.diagnostics is not None:
+            self.diagnostics.tracker.on_client(source_name, connected)
+
+    def _primary_host_id(self) -> Optional[str]:
+        """The diagnostics' PrimaryHostId: the first enabled Sparkplug source's primary host id (None: none is one)."""
+        for source in self.sources:
+            if source.get('enabled', True) and str(source.get('primary_host_id') or '').strip():
+                return str(source['primary_host_id']).strip()
+        return None
+
+    async def _run_diagnostics(self) -> None:
+        """The diagnostics' births at start, then every 10 s a DDATA per diagnostics edge node if anything changed.
+        An error is logged and the next turn tries again (the births until they are queued)."""
+        queue = self.backpressure                   # the default table's
+        logger.info(f"Diagnostics: edge nodes in group {self.diagnostics.group_id}, into the default table")
+        born = False
+        while True:
+            try:
+                rows = self.diagnostics.refresh_rows() if born else self.diagnostics.start_rows()
+                for row in rows:
+                    self._enqueue_fast(row.to_zerobus_record(), queue)
+                self.diagnostics_rows += len(rows)
+                born = True
+            except Exception as e:  # noqa: BLE001 - the next turn tries again
+                logger.warning(f"Diagnostics: {'refresh' if born else 'the births'} failed: {type(e).__name__}: {e}")
+            await asyncio.sleep(REFRESH_S)
 
     def _on_raw_row(self, row: "raw_row.RawRow", queue: BackpressureManager) -> None:
         self.metrics['records_received'] += 1
@@ -640,7 +738,7 @@ class Bridge:
         logger.debug(f"Source stats: {stats}")
 
     def _to_zerobus_message(self, record: Dict[str, Any]) -> Dict[str, Any]:
-        """A queued row as its Zerobus record: the sparkplug_raw columns."""
+        """A queued row as its Zerobus record: the raw_messages columns."""
         return {column: record[column] for column in raw_row.COLUMNS}
 
     async def stop(self):
@@ -649,14 +747,20 @@ class Bridge:
         self._shutdown = True
         self._starting = False
 
+        if self.diagnostics_task is not None:
+            self.diagnostics_task.cancel()
+            await asyncio.gather(self.diagnostics_task, return_exceptions=True)
+            self.diagnostics_task = None
+
         # Sparkplug primary hosts: no supervisor may go ONLINE again while stopping
         for task in self.host_tasks.values():
             task.cancel()
         if self.host_tasks:
             await asyncio.gather(*self.host_tasks.values(), return_exceptions=True)
 
-        # Stop all source clients (a primary host publishes OFFLINE first, so the edges start buffering)
-        for source_name, client in self.clients.items():
+        # Stop all source clients (a primary host publishes OFFLINE first, so the edges start buffering); copies: a
+        # source's stop or edit in progress changes them meanwhile
+        for source_name, client in list(self.clients.items()):
             try:
                 logger.info(f"Stopping source: {source_name}")
                 await client.stop()
@@ -670,7 +774,7 @@ class Bridge:
             for task in pending:
                 task.cancel()
             await asyncio.gather(*self.client_tasks.values(), return_exceptions=True)
-        for source_name, client in self.clients.items():
+        for source_name, client in list(self.clients.items()):
             try:
                 await client.close()
             except Exception as e:
@@ -692,9 +796,18 @@ class Bridge:
         for wal in self.wals.values():
             wal.close()
 
-        for notifier in self.birth_notifiers.values():
+        for notifier in list(self.birth_notifiers.values()):
             await notifier.stop()
 
+        # for good: a start after a stop is a new Bridge (core/lifecycle.py); no source is shown running, nor Zerobus
+        # (the writers stay, for their final counts)
+        self.clients.clear()
+        self.client_tasks.clear()
+        self.host_tasks.clear()
+        self.mqtt_errors.clear()
+        self.tables.clear()
+        self.zerobus_enabled = False
+        self.running = False
         logger.info("✓ Bridge stopped")
 
     def sparkplug_health(self) -> Dict[str, Dict[str, Any]]:
@@ -726,6 +839,9 @@ class Bridge:
                 'rebirth_refused': s['rebirth_refused'], 'block_auto_rebirth': s['block_auto_rebirth'],
                 'duplicate_aliases': s['duplicate_aliases'], 'sequence_errors': s['sequence_errors'],
             }
+            mqtt_error = self.mqtt_errors.get(name) or {}
+            h.update({'mqtt_last_error': mqtt_error.get('message'), 'mqtt_failing_since': iso(mqtt_error.get('since')),
+                      'mqtt_last_error_at': iso(mqtt_error.get('at'))})
             writer = self.writers.get(self._get_target_for_source(name))
             if writer is not None:
                 w = writer.status()
@@ -735,7 +851,8 @@ class Bridge:
                           'rows_unconvertible': w.rows_unconvertible,
                           'zerobus_failures': w.failures, 'batch_in_flight': w.batch_in_flight,
                           'zerobus_failing_since': iso(w.failing_since), 'batch_pending_since': iso(w.pending_since),
-                          'zerobus_last_success': iso(w.last_success), 'last_error': w.last_error})
+                          'zerobus_last_success': iso(w.last_success), 'last_error': w.last_error,
+                          'zerobus_last_error_at': iso(w.last_error_at)})
             wal = self.wals.get(self._get_target_for_source(name))
             if wal is not None:
                 st = wal.status()
@@ -747,7 +864,8 @@ class Bridge:
                 n = notifier.status()
                 h.update({'nbirths_written': n.births, 'edge_node_schema_calls': n.calls,
                           'edge_node_schema_failures': n.failures, 'edge_node_schema_gave_up': n.gave_up,
-                          'edge_node_schema_pending': n.pending, 'edge_node_schema_last_error': n.last_error})
+                          'edge_node_schema_pending': n.pending, 'edge_node_schema_last_error': n.last_error,
+                          'edge_node_schema_checked': n.checked})
             out[name] = h
         return out
 
@@ -873,6 +991,9 @@ class Bridge:
         self._source_queues.pop(source_name, None)
         old = self.sources[index]
         self.sources[index] = source_config
+        if was_active and self._shutdown:
+            logger.info(f"✓ Source '{source_name}' updated; the bridge is stopping: it applies at the next start")
+            return
         if was_active and source_config.get('enabled', True):
             try:
                 await self._start_client(source_config)
@@ -891,6 +1012,8 @@ class Bridge:
         Returns:
             dict: Status message with success/error
         """
+        if self._shutdown:                      # stopped for good: its writers would never be stopped again
+            return {'status': 'error', 'message': 'The bridge is stopped: start it first'}
         try:
             if self.zerobus_enabled and self.tables:
                 return {'status': 'ok', 'message': 'ZeroBus already enabled'}
@@ -912,6 +1035,8 @@ class Bridge:
         Returns:
             dict: Status message with success/error
         """
+        if self._shutdown:
+            return {'status': 'error', 'message': 'The bridge is stopped: start it first'}
         try:
             if not self.zerobus_enabled:
                 return {'status': 'ok', 'message': 'ZeroBus already disabled'}
@@ -957,10 +1082,13 @@ class Bridge:
             'active_sources': len(self.clients),
             'bridge_running': bool(getattr(self, 'running', False)),
             'bridge_starting': bool(getattr(self, '_starting', False)) and not bool(getattr(self, 'running', False)),
+            'bridge_started_at': None if self.started_at is None else int(self.started_at * 1000),   # epoch ms
             'zerobus_config_enabled': self.zerobus_config_enabled,
             'zerobus_connected': bool(self.tables),
             'zerobus_enabled': self.zerobus_enabled,
             'zerobus_targets': list(self.tables.keys()),
             'backpressure_queue_size': self._backpressure_metrics().get('current_queue_depth', 0),
+            'diagnostics': None if self.diagnostics is None else {'group_id': self.diagnostics.group_id,
+                                                                  'rows_queued': self.diagnostics_rows},
             'metrics': self.get_metrics(),
         }

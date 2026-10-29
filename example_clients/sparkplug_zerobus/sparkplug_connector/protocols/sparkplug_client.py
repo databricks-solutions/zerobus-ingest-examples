@@ -1,4 +1,4 @@
-"""Sparkplug B source: one ``sparkplug_raw`` row per Sparkplug message from an MQTT server (e.g. Chariot).
+"""Sparkplug B source: one ``raw_messages`` row per Sparkplug message from an MQTT server (e.g. Chariot).
 
 Connects to the MQTT server (``mqtt://host:port`` or ``mqtts://host:port``; credentials and TLS through
 ``mqtt_security.py``), subscribes (QoS 0 by default), keeps each payload as bytes and hands a ``RawRow`` (``sparkplug_connector.sparkplug.raw_row``) to the
@@ -48,7 +48,7 @@ REFUSALS_TO_STOP = 2            # in a row (an NCMD the connection outlives star
 
 
 class SparkplugClient(ProtocolClient):
-    """MQTT client that turns Sparkplug B messages into ``sparkplug_raw`` rows (optionally the primary host)."""
+    """MQTT client that turns Sparkplug B messages into ``raw_messages`` rows (optionally the primary host)."""
 
     def __init__(
         self,

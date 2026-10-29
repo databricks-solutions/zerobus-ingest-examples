@@ -1,6 +1,6 @@
-"""One ``sparkplug_raw`` row per Sparkplug B message.
+"""One ``raw_messages`` row per Sparkplug B message.
 
-The columns of ``sparkplug_raw``: ``msg_id``,
+The columns of ``raw_messages``: ``msg_id``,
 ``msg_topic``, ``namespace``, ``group_id``, ``message_type``, ``edge_node_id``, ``device_id``, ``msg``
 (VARIANT: the payload as Tahu JSON, ``to_tahu_json``) and ``inserted_at`` (DECIMAL(38,0): epoch ms at receipt).
 

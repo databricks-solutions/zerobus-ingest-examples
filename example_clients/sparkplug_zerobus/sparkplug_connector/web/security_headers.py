@@ -41,15 +41,17 @@ async def security_headers_middleware(
 
     # Content Security Policy - Restrict resource loading
     # This prevents XSS attacks by controlling what resources can be loaded
+    # The pages have no inline script or style: Alpine's CSP build evaluates its expressions without eval
     csp_directives = [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline'",  # 'unsafe-inline' needed for embedded scripts
-        "style-src 'self' 'unsafe-inline'",   # 'unsafe-inline' needed for embedded styles
+        "script-src 'self'",
+        "style-src 'self'",
         "img-src 'self' data:",               # Allow data URIs for inline images
         "font-src 'self'",
         "connect-src 'self'",                 # API calls to same origin
+        "object-src 'none'",
         "frame-ancestors 'none'",             # Prevent framing (also set X-Frame-Options)
-        "base-uri 'self'",
+        "base-uri 'none'",
         "form-action 'self'",
     ]
     response.headers['Content-Security-Policy'] = '; '.join(csp_directives)
@@ -101,6 +103,10 @@ async def security_headers_middleware(
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
+    elif 'Cache-Control' not in response.headers:
+        # the pages' files: checked for a change on every load (ETag / Last-Modified), so after an upgrade no
+        # browser keeps an old stylesheet or script (without a header it caches them by heuristics)
+        response.headers['Cache-Control'] = 'no-cache'
 
     # Remove server header to avoid information disclosure
     if 'Server' in response.headers:

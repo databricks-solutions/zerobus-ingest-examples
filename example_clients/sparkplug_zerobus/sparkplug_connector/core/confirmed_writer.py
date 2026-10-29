@@ -54,11 +54,12 @@ class WriterStatus:
     written: int
     failures: int
     batch_in_flight: int
-    last_error: str | None
+    last_error: str | None                  # the last one, kept after recovery (current: failing_since is set)
     rows_too_large: int
     queue_depth: int
     queue_high_water: bool
     rows_unconvertible: int = 0
+    last_error_at: float | None = None      # when last_error happened
 
 
 class ConfirmedWriter:
@@ -101,6 +102,7 @@ class ConfirmedWriter:
         self._pending_since: float | None = None
         self._last_success: float | None = None
         self._last_error: str | None = None
+        self._last_error_at: float | None = None
 
     async def run(self) -> None:
         """Writes until ``stop()``, or until drained after ``finish()``; closes the stream at the end."""
@@ -189,7 +191,7 @@ class ConfirmedWriter:
             last_success=self._last_success, written=self._written, failures=self._failures,
             batch_in_flight=len(self._batch), last_error=self._last_error, rows_too_large=self._too_large,
             queue_depth=depth, queue_high_water=self._high_water is not None and depth >= self._high_water,
-            rows_unconvertible=self._unconvertible)
+            rows_unconvertible=self._unconvertible, last_error_at=self._last_error_at)
 
     def skip_row(self, topic: Any, e: Exception) -> None:
         """A row that can't be made a JSON record: skipped and counted (it would fail on every resend)."""
@@ -240,6 +242,7 @@ class ConfirmedWriter:
     def _failed(self, what: str, e: Exception) -> None:
         self._failures += 1
         self._last_error = f"{what}: {type(e).__name__}: {e}"
+        self._last_error_at = self._clock()
         if self._failing_since is None:
             self._failing_since = self._clock()
         logger.warning("[%s] Zerobus %s failed (retrying in %.0f s): %s", self._name, what, self._backoff, e)

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zerobus · Sparkplug Zerobus</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/pico.min.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="/js/theme.js"></script>
+  <script defer src="/js/api.js"></script>
+  <script defer src="/js/layout.js"></script>
+  <script defer src="/js/zerobus.js"></script>
+  <script defer src="/vendor/alpine-csp.min.js"></script>
+</head>
+<body data-page="zerobus">
+<main x-data="zerobusPage">
+  <div class="page-head">
+    <p>Where the rows go: the workspace, its Zerobus endpoint, the default table and the service principal that writes it.</p>
+    <div class="actions">
+      <button type="button" x-show="!running" @click="startZerobus" :aria-busy="busy === 'start'" :disabled="!!busy || !can('start_stop')">
+        <span data-icon="play"></span>Start Zerobus</button>
+      <button type="button" class="secondary" x-show="running" @click="stopZerobus" :aria-busy="busy === 'stop'" :disabled="!!busy || !can('start_stop')">
+        <span data-icon="stop"></span>Stop Zerobus</button>
+    </div>
+  </div>
+
+  <p aria-busy="true" x-show="loading">Loading the Zerobus settings…</p>
+  <article x-show="!loading" x-cloak>
+    <header><h2>Connection</h2></header>
+    <form @submit.prevent="save" novalidate>
+      <fieldset :disabled="!can('configure')">
+        <div class="grid2">
+          <div>
+            <label for="z-host">Workspace URL<span class="req">*</span></label>
+            <input id="z-host" x-model="form.workspace_host" placeholder="https://<workspace>.cloud.databricks.com" spellcheck="false" :aria-invalid="invalid('workspace_host')">
+            <small x-text="error('workspace_host') || 'Also the workspace of the default table'"></small>
+          </div>
+          <div>
+            <label for="z-endpoint">Zerobus endpoint<span class="req">*</span></label>
+            <input id="z-endpoint" x-model="form.zerobus_endpoint" placeholder="<workspace-id>.zerobus.<region>.cloud.databricks.com" spellcheck="false" :aria-invalid="invalid('zerobus_endpoint')">
+            <small x-show="error('zerobus_endpoint')" x-text="error('zerobus_endpoint')"></small>
+          </div>
+        </div>
+        <label for="z-table">Default table<span class="req">*</span></label>
+        <input id="z-table" x-model="form.table" placeholder="catalog.schema.raw_messages" spellcheck="false" :aria-invalid="invalid('table')">
+        <small x-text="error('table') || 'catalog.schema.table: the table of every source without one of its own'"></small>
+        <div class="grid2">
+          <div>
+            <label for="z-cid">Client ID</label>
+            <input id="z-cid" x-model="form.client_id" placeholder="the service principal's application ID" spellcheck="false" autocomplete="off">
+          </div>
+          <div>
+            <label>Client secret</label>
+            <p class="secret-env"><span class="dot" :class="secretSet ? 'dot-ok' : 'dot-err'"></span>From the environment variable
+              <span class="mono" x-text="secretVariable"></span></p>
+            <small x-text="secretNote"></small>
+          </div>
+        </div>
+        <label class="switch"><input type="checkbox" role="switch" x-model="form.enabled"> Start Zerobus with the connector</label>
+      </fieldset>
+      <p class="form-error" x-show="formError" x-text="formError" role="alert"></p>
+      <div class="sticky-actions" x-show="can('configure')">
+        <button type="submit" :aria-busy="saving" :disabled="saving">Save</button>
+      </div>
+    </form>
+  </article>
+
+  <article>
+    <header><h2>Tables</h2></header>
+    <div class="table-wrap" x-show="targets.length > 0">
+      <table>
+        <thead><tr><th>Table</th><th>Stream</th><th>Written</th><th>In flight</th><th>Queue</th><th>Write-ahead log</th><th>Last error</th></tr></thead>
+        <tbody>
+          <template x-for="t in targets" :key="t.id">
+            <tr>
+              <td class="mono" x-text="t.table"></td>
+              <td class="nowrap"><span class="dot" :class="t.ok ? 'dot-ok' : 'dot-err'"></span><span x-text="t.stream"></span></td>
+              <td x-text="t.written"></td>
+              <td x-text="t.inFlight"></td>
+              <td x-text="t.queue"></td>
+              <td x-text="t.wal"></td>
+              <td class="last-error" :class="t.errorNow ? 'error-text' : 'muted'" x-text="t.error"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" x-show="targets.length === 0">No table open: Zerobus is off, or no enabled source writes yet.</p>
+  </article>
+
+  <article>
+    <header><h2>Checks</h2></header>
+    <p>Checks the endpoint's DNS and TCP and the credentials; the deep check also opens a Zerobus stream to the default table.</p>
+    <div class="actions">
+      <button type="button" class="outline" @click="check(false)" :aria-busy="checking === 'quick'" :disabled="!!checking">Check</button>
+      <button type="button" class="outline" @click="check(true)" :aria-busy="checking === 'deep'" :disabled="!!checking">Deep check</button>
+    </div>
+    <dl class="facts" x-show="checks.length > 0">
+      <template x-for="c in checks" :key="c.name">
+        <div><dt x-text="c.name"></dt><dd><span class="dot" :class="c.cls" x-show="c.cls"></span><span x-text="c.value"></span></dd></div>
+      </template>
+    </dl>
+    <details x-show="checkJson"><summary>All results</summary><pre class="mono" x-text="checkJson"></pre></details>
+  </article>
+</main>
+</body>
+</html>

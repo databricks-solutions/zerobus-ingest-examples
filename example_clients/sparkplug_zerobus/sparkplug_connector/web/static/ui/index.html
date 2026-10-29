@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Status · Sparkplug Zerobus</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/pico.min.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="/js/theme.js"></script>
+  <script defer src="/js/api.js"></script>
+  <script defer src="/js/layout.js"></script>
+  <script defer src="/js/status.js"></script>
+  <script defer src="/vendor/alpine-csp.min.js"></script>
+</head>
+<body data-page="status">
+<main x-data="statusPage">
+  <div class="page-head">
+    <p x-text="summary"></p>
+    <div class="actions">
+      <button type="button" x-show="canStartBridge" @click="startBridge" :aria-busy="busy === 'bridge'" :disabled="!!busy || !can('start_stop')">
+        <span data-icon="play"></span>Start the bridge</button>
+      <button type="button" class="secondary outline" x-show="canStopBridge" @click="restartBridge" :aria-busy="busy === 'restart'" :disabled="!!busy || !can('start_stop')">
+        <span data-icon="restart"></span>Restart</button>
+      <button type="button" class="secondary" x-show="canStopBridge" @click="askStop" :aria-busy="busy === 'stop'" :disabled="!!busy || !can('start_stop')">
+        <span data-icon="stop"></span>Stop the bridge</button>
+    </div>
+  </div>
+
+  <section class="tiles" aria-label="Counters">
+    <article class="tile">
+      <div class="label">Rows written</div>
+      <div class="value" x-text="rowsWritten" :title="rowsWrittenExact"></div>
+      <div class="sub" x-text="rowsSince"></div>
+    </article>
+    <article class="tile">
+      <div class="label">Queued</div>
+      <div class="value" x-text="queued" :title="queuedExact"></div>
+      <div class="sub">rows waiting for their table's writer</div>
+    </article>
+    <article class="tile">
+      <div class="label">Sources</div>
+      <div class="value" x-text="sourcesRunning"></div>
+      <div class="sub" x-text="sourcesNote"></div>
+    </article>
+    <article class="tile">
+      <div class="label">Edge nodes</div>
+      <div class="value" x-text="edgeNodeCount"></div>
+      <div class="sub" x-text="edgeNodeBreakdown"></div>
+    </article>
+  </section>
+
+  <article>
+    <header><h2>Sources</h2></header>
+    <div class="table-wrap" x-show="sources.length > 0">
+      <table>
+        <thead><tr><th>Source</th><th>State</th><th>MQTT</th><th>Rows</th><th>Zerobus</th><th>Last error</th>
+          <th class="actions"><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+          <template x-for="s in sources" :key="s.name">
+            <tr>
+              <td><strong x-text="s.name"></strong><br><small class="muted" x-text="s.role"></small></td>
+              <td class="nowrap"><span class="dot" :class="s.stateClass"></span><span x-text="s.state"></span></td>
+              <td class="nowrap" x-text="s.mqtt"></td>
+              <td class="nowrap" x-text="s.rows"></td>
+              <td class="nowrap" x-text="s.zerobus"></td>
+              <td class="last-error" :class="s.errorNow ? 'error-text' : 'muted'" x-text="s.error"></td>
+              <td class="actions">
+                <button type="button" class="small" x-show="!s.running" @click="startSource(s.name)" :disabled="!!busy || !can('start_stop')" :aria-busy="busy === s.name">
+                  <span data-icon="play"></span>Start</button>
+                <button type="button" class="small secondary" x-show="s.running" @click="stopSource(s.name)" :disabled="!!busy || !can('start_stop')" :aria-busy="busy === s.name">
+                  <span data-icon="stop"></span>Stop</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" x-show="sources.length === 0">No sources yet. Add the MQTT server your edge nodes publish to on the
+      <a href="/sources.html">Sources</a> page.</p>
+  </article>
+
+  <div class="cards">
+    <article>
+      <header><h2>Zerobus</h2></header>
+      <dl class="facts">
+        <dt>Writing</dt><dd><span class="dot" :class="zerobusOn ? 'dot-ok' : 'dot-err'"></span><span x-text="zerobusState"></span></dd>
+        <dt>Tables</dt><dd><template x-for="t in targets" :key="t"><span class="tag mono" x-text="t"></span></template><span class="muted" x-show="targets.length === 0">none open</span></dd>
+        <dt>Diagnostics</dt><dd x-text="diagnosticsNote"></dd>
+      </dl>
+      <p><a href="/zerobus.html">Zerobus settings and checks</a></p>
+    </article>
+    <article>
+      <header><h2>Counters</h2></header>
+      <dl class="facts">
+        <dt>Rows received</dt><dd x-text="metric('records_received')"></dd>
+        <dt>Rows queued</dt><dd x-text="metric('records_enqueued')"></dd>
+        <dt>Rows dropped</dt><dd x-text="metric('records_dropped')"></dd>
+        <dt>Reconnections</dt><dd x-text="metric('reconnections')"></dd>
+      </dl>
+    </article>
+  </div>
+
+  <dialog x-ref="stop">
+    <article class="narrow">
+      <header><h3>Stop the bridge?</h3></header>
+      <p>Every source stops (a primary host goes OFFLINE first, so its edge nodes keep their data) and the queued rows
+        are written. The page stays up: Start or Restart reads the configuration file again.</p>
+      <footer>
+        <button type="button" class="secondary outline" @click="cancelStop">Cancel</button>
+        <button type="button" class="danger" @click="confirmStop">Stop</button>
+      </footer>
+    </article>
+  </dialog>
+</main>
+</body>
+</html>

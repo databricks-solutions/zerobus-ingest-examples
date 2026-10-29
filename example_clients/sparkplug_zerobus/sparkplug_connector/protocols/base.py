@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 class ProtocolType(str, Enum):
     """Supported protocol types."""
-    SPARKPLUG = "sparkplug"   # Sparkplug B over MQTT: sparkplug_raw rows (protocols/sparkplug_client.py)
+    SPARKPLUG = "sparkplug"   # Sparkplug B over MQTT: raw_messages rows (protocols/sparkplug_client.py)
 
 
 class ProtocolClient(ABC):

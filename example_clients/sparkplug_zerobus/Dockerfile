@@ -1,17 +1,17 @@
-# The connector: Sparkplug B (MQTT) to Databricks through Zerobus (its web UI is prebuilt; protobuf runs its fast
-# upb implementation).
+# The connector: Sparkplug B (MQTT) to Databricks through Zerobus. Python only (the web page has no build step);
+# protobuf runs its fast upb implementation.
 #
 #   docker build -t sparkplug-zerobus --build-arg PIP_INDEX_URL=https://pypi.org/simple .
-#   docker run -d --stop-timeout 30 --env-file connector.env -p 127.0.0.1:8001:8001 \
+#   docker run -d --stop-timeout 30 -e DATABRICKS_CLIENT_SECRET -e SPARKPLUG_MQTT_PASSWORD -p 127.0.0.1:8001:8001 \
 #     --mount type=bind,source="$PWD/sparkplug_connector/config/config.yaml",target=/app/sparkplug_connector/config/config.yaml \
 #     --mount type=volume,source=connector-wal,target=/app/wal \
 #     sparkplug-zerobus
 #
 # sparkplug_connector/config/config.yaml, edited (source enabled, table set), is mounted over the image's copy so
 # the web page's saves land in it (--mount stops if the file is missing; -v would mount an empty directory).
-# connector.env holds the variables the config reads (README.md lists them). The write-ahead log (zerobus.wal) is
-# in /app/wal. A stop can take up to ~20 s (OFFLINE first, then the queued rows written): --stop-timeout 30, as
-# Docker's default is 10 s.
+# The two secrets come from the shell's environment (-e NAME; or --env-file connector.env: .env.example). The
+# write-ahead log (zerobus.wal) is in /app/wal. A stop can take up to ~20 s (OFFLINE first, then the queued rows
+# written): --stop-timeout 30, as Docker's default is 10 s.
 # The container runs as uid 1000: on Linux the mounted config file must be writable by it for the web page's saves.
 FROM python:3.12-slim
 ARG PIP_INDEX_URL=https://pypi.org/simple
@@ -21,7 +21,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r requirements.txt
 COPY sparkplug_connector ./sparkplug_connector
-RUN mkdir -p /app/wal && useradd --create-home connector && chown -R connector /app
+# /app/wal and the uploaded certificates' directory exist in the image, so a volume mounted there is the connector's
+RUN mkdir -p /app/wal && useradd --create-home connector && chown -R connector /app \
+    && install -d -o connector -m 700 /home/connector/.sparkplug_connector /home/connector/.sparkplug_connector/certs
 USER connector
 EXPOSE 8001
 # Health: GET /health on the web UI's port (web_ui.port in the config; CONNECTOR_HEALTH_PORT if it isn't 8001)

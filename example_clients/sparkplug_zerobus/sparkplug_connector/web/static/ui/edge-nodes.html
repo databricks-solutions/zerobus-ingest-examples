@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edge nodes · Sparkplug Zerobus</title>
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/pico.min.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="/js/theme.js"></script>
+  <script defer src="/js/api.js"></script>
+  <script defer src="/js/layout.js"></script>
+  <script defer src="/js/edge-nodes.js"></script>
+  <script defer src="/vendor/alpine-csp.min.js"></script>
+</head>
+<body data-page="edge-nodes">
+<main x-data="edgeNodesPage">
+  <div class="page-head">
+    <p>Each edge node and device the running sources have seen, online or offline and since when (births bring them
+      online, deaths take them offline). <strong>Request rebirth</strong> sends the edge node an NCMD.</p>
+  </div>
+  <div class="toolbar">
+    <input type="search" x-model="search" placeholder="Filter by group, edge node or device" aria-label="Filter">
+    <span class="muted" x-text="countNote"></span>
+  </div>
+
+  <p aria-busy="true" x-show="loading">Loading edge nodes…</p>
+  <template x-for="group in groups" :key="group.source">
+    <article x-show="!loading">
+      <header><h2 x-text="group.source"></h2></header>
+      <div class="table-wrap" x-show="group.nodes.length > 0">
+        <table>
+          <thead><tr><th>Group</th><th>Edge node</th><th>State</th><th>Since</th><th>Changed by</th><th>bdSeq</th><th>Devices</th>
+            <th class="actions"><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody>
+            <template x-for="n in group.nodes" :key="n.key">
+              <tr>
+                <td x-text="n.group_id"></td>
+                <td><strong x-text="n.edge_node_id"></strong></td>
+                <td class="nowrap"><span class="dot" :class="n.online ? 'dot-ok' : 'dot-err'"></span><span x-text="n.online ? 'Online' : 'Offline'"></span></td>
+                <td class="nowrap"><span x-text="n.sinceText"></span> <small class="muted" x-text="n.ago"></small></td>
+                <td x-text="n.changedBy"></td>
+                <td x-text="n.bdseq"></td>
+                <td>
+                  <template x-for="d in n.devices" :key="d.device_id">
+                    <span class="tag" :title="d.title"><span class="dot" :class="d.online ? 'dot-ok' : 'dot-err'"></span><span x-text="d.device_id"></span></span>
+                  </template>
+                  <span class="muted" x-show="n.devices.length === 0">—</span>
+                </td>
+                <td class="actions">
+                  <button type="button" class="small outline" @click="rebirth(group.source, n)" :aria-busy="busy === n.key"
+                          :disabled="!!busy || !can('start_stop')"><span data-icon="restart"></span>Request rebirth</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted" x-show="group.nodes.length === 0">No edge nodes seen yet (or none match the filter).</p>
+    </article>
+  </template>
+  <p class="empty" x-show="!loading && groups.length === 0">No running Sparkplug source. Start one on the
+    <a href="/sources.html">Sources</a> page.</p>
+</main>
+</body>
+</html>

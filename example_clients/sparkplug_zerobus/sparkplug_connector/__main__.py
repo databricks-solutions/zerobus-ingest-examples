@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sparkplug_connector.core.config_loader import ConfigLoader
 from sparkplug_connector.core.bridge import Bridge
+from sparkplug_connector.core.lifecycle import BridgeLifecycle
 from sparkplug_connector.web.web_server import WebServer
 from sparkplug_connector.core.advanced_logging import (
     LogRotationConfig,
@@ -51,24 +52,27 @@ class Connector:
         self.config_loader = ConfigLoader(config_path=Path(config_path) if config_path else None)
         self.config = self.config_loader.load()
 
-        # Initialize components
+        # Initialize components; the lifecycle replaces the bridge when the page starts it again after a stop
         self.bridge = Bridge(self.config)
+        self.lifecycle = BridgeLifecycle(self.bridge, load_config=self.config_loader.load)
+        self.lifecycle.add_listener(self._new_bridge)
         self.web_server = WebServer(
             config=self.config,
             bridge=self.bridge,
             config_path=self.config_loader.config_path,   # the page saves sources back to this file
+            lifecycle=self.lifecycle,
         )
 
         # Shutdown event
         self._shutdown_event = asyncio.Event()
 
-        # Background bridge task (so Web UI can start immediately)
-        self._bridge_task: asyncio.Task | None = None
-
         # Background log maintenance task
         self._log_maintenance_task: asyncio.Task | None = None
 
         logger.info("✓ Sparkplug Zerobus connector initialized")
+
+    def _new_bridge(self, bridge: Bridge, config: dict) -> None:
+        self.bridge, self.config = bridge, config
 
     async def start(self):
         """Start all services."""
@@ -83,7 +87,7 @@ class Connector:
 
         # Start bridge in the background (optional)
         if self.config.get('bridge', {}).get('autostart', True):
-            self._bridge_task = asyncio.create_task(self.bridge.start())
+            self.lifecycle.submit('start')     # in the background, so the web page answers at once
             logger.info("⏳ Bridge starting in background")
         else:
             logger.info("Bridge autostart disabled (web UI / diagnostics mode)")
@@ -112,16 +116,8 @@ class Connector:
         """Stop all services gracefully."""
         logger.info("Shutting down...")
 
-        # Stop bridge first (stop data flow)
-        # If bridge is still starting, cancel start task
-        if self._bridge_task is not None and not self._bridge_task.done():
-            self._bridge_task.cancel()
-            try:
-                await self._bridge_task
-            except Exception:
-                pass
-
-        await self.bridge.stop()
+        # The bridge first (stop the data flow): an action of the page in progress finishes first
+        await self.lifecycle.shutdown()
 
         # Stop log maintenance task
         if self._log_maintenance_task is not None and not self._log_maintenance_task.done():

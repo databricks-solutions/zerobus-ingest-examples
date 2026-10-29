@@ -63,6 +63,12 @@ async def correlation_id_middleware(
 
         return response
 
+    except web.HTTPException as e:
+        # a deliberate answer (401 before a login, 403, 404, a redirect): not an error of the connector's
+        if e.status >= 500:
+            logger.warning(f"Request answered {e.status} (correlation_id={correlation_id}): {e.reason}")
+        raise
+
     except Exception as e:
         # Log error with correlation ID
         logger.error(
