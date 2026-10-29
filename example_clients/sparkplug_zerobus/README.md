@@ -19,11 +19,11 @@ Sparkplug message** to a Delta table through Zerobus Ingest.
   endpoint for Docker.
 - **The Eclipse Sparkplug TCK's Host Application tests** pass as primary host, except where the connector does less
   than a full host application on purpose (no metric writes, no STALE marking); details in the connector's
-  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/0d6855f/README.md#sparkplug-tck). Not a
+  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/748cfed/README.md#sparkplug-tck). Not a
   certification.
 
 This folder is exported from [nickconnors/sparkplug-zerobus-connector](https://github.com/nickconnors/sparkplug-zerobus-connector)
-(commit [`0d6855f`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/0d6855f)). Its tests live
+(commit [`748cfed`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/748cfed)). Its tests live
 there.
 
 ## What's here
@@ -56,6 +56,9 @@ MQTT Transmission has **one** primary host per transmitter. If another applicati
 either the connector takes over that role, or it runs as a plain subscriber next to it. Run exactly one connector
 per Primary Host ID: two with the same id fight over STATE, and two with different ids write every row twice.
 
+As a plain subscriber next to another primary host, the connector gets data only while that host is
+ONLINE: MQTT Transmission publishes only then (and buffers for its primary host alone).
+
 ## Before you start
 
 - A Unity Catalog table for the rows, and a **service principal** with an OAuth secret that may write it:
@@ -78,7 +81,7 @@ GRANT MODIFY, SELECT ON TABLE sparkplug.bronze.raw_messages TO `<application id>
 ```
 
   The names are an example (any catalog, schema and table work). Column comments and sample queries:
-  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/0d6855f/docs/UNITY_CATALOG_SCHEMAS.md);
+  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/748cfed/docs/UNITY_CATALOG_SCHEMAS.md);
   the grants for the NBIRTH call: [sparkplug_connector/sparkplug/README.md](sparkplug_connector/sparkplug/README.md#databricks-setup).
 - The Zerobus endpoint: `<workspace-id>.zerobus.<region>.cloud.databricks.com`.
 - An MQTT user that may subscribe to `spBv1.0/#`, publish rebirth requests on `spBv1.0/+/NCMD/+` (unless
@@ -103,7 +106,7 @@ The two secrets are not in the file: the connector reads them from its environme
 password). Optionally any other value can come from the environment too: `'${env:NAME}'`, or
 `'${env:NAME:default}'`, in the file.
 
-For **MQTT over TLS** use `mqtts://<host>:8883`; a private CA, client certificates and the other TLS settings go
+For **MQTT over TLS** use `mqtts://<host>:8883` (an `mqtts://` endpoint on a plain port, e.g. 1883, fails with `UNEXPECTED_EOF_WHILE_READING`); a private CA, client certificates and the other TLS settings go
 under the source's `security:` (commented in the example). Every setting:
 [sparkplug_connector/sparkplug/README.md](sparkplug_connector/sparkplug/README.md#configuration).
 
@@ -148,11 +151,16 @@ docker run -d --name sparkplug-zerobus --restart unless-stopped --stop-timeout 3
   put them in a file instead: copy [.env.example](.env.example) to `connector.env` (git-ignored here), fill it in,
   and use `--env-file connector.env` in place of the two `-e`. The web page never sets a secret's value, only the
   name of the environment variable it is in.
+  Check a secret before `docker run`, without showing it: its length, `echo ${#SPARKPLUG_MQTT_PASSWORD}` (bash,
+  zsh) or `$env:SPARKPLUG_MQTT_PASSWORD.Length` (PowerShell).
+- Stop, start, update: `docker stop sparkplug-zerobus` and `docker start sparkplug-zerobus` keep the container
+  (and its secrets); `docker run` again needs `docker rm sparkplug-zerobus` first. An update: `git pull`,
+  `docker build` as above, `docker rm -f sparkplug-zerobus`, then `docker run` with the secrets set in that shell.
 - The edited file is mounted over the image's copy of it; edits made on the web page are saved into it, so don't
   mount it read-only. The container runs as uid 1000: on Linux, make the file writable by it
   (`sudo chown 1000 sparkplug_connector/config/config.yaml`), or the page's saves fail.
-- It's a file the repository tracks: before pulling an update, commit or stash your edits (`git stash`, then
-  `git stash pop` after the pull).
+- It's a file the repository tracks: before pulling an update, copy your edited file aside, `git checkout --` it,
+  pull, and copy it back (`git stash` and `git stash pop` conflict when the update changed the example file).
 - Use `--mount`, not `-v`, for the file: if the file doesn't exist, `-v` creates an empty directory in its place
   (on Windows as well), and the connector fails with `IsADirectoryError`; `--mount` stops with an error.
 - The `connector-wal` volume keeps the write-ahead log (`zerobus.wal`, on in the example) across container restarts;
@@ -166,7 +174,7 @@ docker run -d --name sparkplug-zerobus --restart unless-stopped --stop-timeout 3
   Docker's logging options (e.g. `--log-opt max-size=50m --log-opt max-file=5`).
 - The web UI is on port 8001 (`web_ui.port`). Publish it on 127.0.0.1, or switch the login on
   (`web_ui.authentication`, a Databricks workspace's OAuth; the steps are in the source repository's
-  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/0d6855f/README.md#login-off-by-default))
+  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/748cfed/README.md#login-off-by-default))
   before publishing it more widely. With the login off, the page answers only to the names the connector knows
   as its own (IP addresses, `localhost`, the machine's name; in Docker the container's): to open it by another
   name, e.g. the VM's, list that in `web_ui.allowed_hosts` (DNS rebinding protection; `['*']` turns it off).
@@ -206,7 +214,7 @@ the next restart) and **Certificates** (the MQTT TLS files; a source names one b
 file the connector was started with (`--config`), `${env:...}` placeholders kept; a save made on a configuration
 someone else changed meanwhile is refused (reload the page). Secrets come from environment variables only: the page
 sets the variable's name, never a value (a source's Password variable left empty: `SPARKPLUG_MQTT_PASSWORD`). `web_ui.read_only: true` makes the page a status display. Every page and
-setting: the source repository's [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/0d6855f/README.md#web-ui).
+setting: the source repository's [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/748cfed/README.md#web-ui).
 
 ## License
 
