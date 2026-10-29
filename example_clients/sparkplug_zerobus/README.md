@@ -19,11 +19,11 @@ Sparkplug message** to a Delta table through Zerobus Ingest.
   endpoint for Docker.
 - **The Eclipse Sparkplug TCK's Host Application tests** pass as primary host, except where the connector does less
   than a full host application on purpose (no metric writes, no STALE marking); details in the connector's
-  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/cb64bf6/README.md#sparkplug-tck). Not a
+  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/a27eaf7/README.md#sparkplug-tck). Not a
   certification.
 
 This folder is exported from [nickconnors/sparkplug-zerobus-connector](https://github.com/nickconnors/sparkplug-zerobus-connector)
-(commit [`cb64bf6`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/cb64bf6)). Its tests live
+(commit [`a27eaf7`](https://github.com/nickconnors/sparkplug-zerobus-connector/commit/a27eaf7)). Its tests live
 there.
 
 ## What's here
@@ -74,7 +74,7 @@ GRANT MODIFY, SELECT ON TABLE bridge_stage_db.stage_db.sparkplug_raw TO `<applic
 ```
 
   The names are an example (any catalog, schema and table work). Column comments and sample queries:
-  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/cb64bf6/docs/UNITY_CATALOG_SCHEMAS.md);
+  [UNITY_CATALOG_SCHEMAS.md](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/a27eaf7/docs/UNITY_CATALOG_SCHEMAS.md);
   the grants for the NBIRTH call: [sparkplug_connector/sparkplug/README.md](sparkplug_connector/sparkplug/README.md#databricks-setup).
 - The Zerobus endpoint: `<workspace-id>.zerobus.<region>.cloud.databricks.com`.
 - An MQTT user that may subscribe to `spBv1.0/#`, publish rebirth requests on `spBv1.0/+/NCMD/+` (unless
@@ -161,7 +161,7 @@ docker run -d --name sparkplug-zerobus --restart unless-stopped --stop-timeout 3
   Docker's logging options (e.g. `--log-opt max-size=50m --log-opt max-file=5`).
 - The web UI is on port 8001 (`web_ui.port`). Publish it on 127.0.0.1, or switch the login on
   (`web_ui.authentication`, a Databricks workspace's OAuth; the steps are in the source repository's
-  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/cb64bf6/README.md#login-off-by-default))
+  [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/a27eaf7/README.md#login-off-by-default))
   before publishing it more widely. With the login off, the page answers only to the names the connector knows
   as its own (IP addresses, `localhost`, the machine's name; in Docker the container's): to open it by another
   name, e.g. the VM's, list that in `web_ui.allowed_hosts` (DNS rebinding protection; `['*']` turns it off).
@@ -200,8 +200,8 @@ client id, start and stop, each table's writer, diagnostics), **Settings** (the 
 the next restart) and **Certificates** (the MQTT TLS files; a source names one by its file name). A save goes to the
 file the connector was started with (`--config`), `${env:...}` placeholders kept; a save made on a configuration
 someone else changed meanwhile is refused (reload the page). Secrets come from environment variables only: the page
-sets the variable's name, never a value. `web_ui.read_only: true` makes the page a status display. Every page and
-setting: the source repository's [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/cb64bf6/README.md#web-ui).
+sets the variable's name, never a value (a source's Password variable left empty: `SPARKPLUG_MQTT_PASSWORD`). `web_ui.read_only: true` makes the page a status display. Every page and
+setting: the source repository's [README](https://github.com/nickconnors/sparkplug-zerobus-connector/blob/a27eaf7/README.md#web-ui).
 
 ## License
 

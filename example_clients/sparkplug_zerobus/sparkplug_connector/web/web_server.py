@@ -53,6 +53,18 @@ logger = logging.getLogger(__name__)
 SECRET_KEY_PARTS = ('password', 'secret', 'token', 'private_key', 'api_key')
 ENV_REF = re.compile(r'^\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}$')                 # what the page may set
 ENV_REF_IN_FILE = re.compile(r'^\$\{env:([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}$')   # also ${env:NAME:default}
+DEFAULT_PASSWORD_ENV = 'SPARKPLUG_MQTT_PASSWORD'      # the example configuration's and the README's variable
+
+
+def default_password(source: Dict[str, Any], for_file: bool) -> Dict[str, Any]:
+    """A source saved from the page with a username and no password (its Password variable left empty) reads
+    ``SPARKPLUG_MQTT_PASSWORD``: ``${env:SPARKPLUG_MQTT_PASSWORD:}`` in the file, the variable's value for the bridge
+    (not set: still no password). Not without a username (a server without login), nor with a TLS-section password."""
+    if not str(source.get('username') or '').strip() or source.get('password') \
+            or (source.get('security') or {}).get('password'):
+        return source
+    return {**source, 'password': f'${{env:{DEFAULT_PASSWORD_ENV}:}}' if for_file
+            else os.environ.get(DEFAULT_PASSWORD_ENV, '')}
 
 
 def env_secret(value: Any, label: str) -> Optional[str]:
@@ -527,6 +539,8 @@ class WebServer:
             except ValidationError as e:
                 return web.json_response({'status': 'error', 'message': str(e)}, status=400)
 
+            running, saved = default_password(running, False), default_password(saved, True)
+
             # Add to bridge
             await self.bridge.add_source(
                 source_name=data['name'],
@@ -603,11 +617,12 @@ class WebServer:
                 running, saved = self._source_password(source_name, data)
             except ValidationError as e:
                 return web.json_response({'status': 'error', 'message': str(e)}, status=400)
-            await self.bridge.update_source(source_name, _edited(current, current, running))
+            await self.bridge.update_source(source_name, default_password(_edited(current, current, running), False))
 
             # Update config file (unchanged fields keep the file's spelling, e.g. a ${env:...} placeholder)
             self._save_sources(lambda sources: [
-                _edited(s, current, saved) if s.get('name') == source_name else s for s in sources])
+                default_password(_edited(s, current, saved), True) if s.get('name') == source_name else s
+                for s in sources])
 
             return web.json_response({'status': 'ok', 'message': f"Source '{source_name}' updated"})
 

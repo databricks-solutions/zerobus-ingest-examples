@@ -293,7 +293,7 @@ offline/online seconds, Rows (`sequence_handling`), Reordering timeout, Block au
 (switch, SQL warehouse, procedures, schema prefix, the views check). A save restarts the source and writes the file
 the connector was started with (`--config`): fields the dialog doesn't show and unchanged fields stay as written
 there, `${env:...}` placeholders included; the password is the name of an environment variable (saved as
-`${env:NAME}`; the dialog shows whether it is set), never its value; `GET /api/sources` masks passwords and secrets. **Edge
+`${env:NAME}`; the dialog shows whether it is set; left empty with a username: `SPARKPLUG_MQTT_PASSWORD`), never its value; `GET /api/sources` masks passwords and secrets. **Edge
 nodes** lists each running source's edge nodes and devices (`GET /api/sparkplug/edge-nodes`, under *Health*) with a
 **Request rebirth** button per edge node; **Status** shows each source's health. The diagnostics' settings are on
 **Settings**.

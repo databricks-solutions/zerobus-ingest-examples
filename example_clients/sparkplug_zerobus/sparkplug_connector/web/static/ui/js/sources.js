@@ -117,7 +117,8 @@ document.addEventListener('alpine:init', () => {
       const name = this.form.password_env.trim();
       if (!name) {
         return o.password_other ? 'The file has a password of its own: give a variable to replace it.'
-          : 'The environment variable the connector reads the password from (none: no password).';
+          : (this.form.username.trim() ? 'Empty: SPARKPLUG_MQTT_PASSWORD (not set in the connector\'s environment: no password).'
+            : 'The environment variable the connector reads the password from (no username: no password).');
       }
       if (name === o.password_env) {
         return o.password_env_set ? name + ' is set in the connector\'s environment.' : name + ' is not set in the connector\'s environment.';
