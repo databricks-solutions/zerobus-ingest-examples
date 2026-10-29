@@ -119,6 +119,8 @@ class Bridge:
         # Source clients
         self.clients: Dict[str, ProtocolClient] = {}
         self.client_tasks: Dict[str, asyncio.Task] = {}
+        # per source, while its MQTT connection fails (e.g. a refused login): the last error, since when (epoch s)
+        self.mqtt_errors: Dict[str, Dict[str, Any]] = {}
 
         # diagnostics: the connector's own edge nodes, rows into the default table (off by default)
         self.diagnostics_config = config.get('diagnostics') or {}
@@ -498,6 +500,7 @@ class Bridge:
                 logger.info(f"[{source_name}] Connecting to {client.endpoint}...")
                 await client.connect()
                 logger.info(f"[{source_name}] ✓ Connected")
+                self.mqtt_errors.pop(source_name, None)
                 connected_at = time.monotonic()
                 self._diagnose_client(source_name, True)
 
@@ -528,6 +531,9 @@ class Bridge:
                     logger.info(f"[{source_name}] disconnected by the connector ({e})")
                 else:
                     logger.error(f"[{source_name}] Error: {e}")
+                    now = time.time()
+                    since = (self.mqtt_errors.get(source_name) or {}).get('since', now)
+                    self.mqtt_errors[source_name] = {'message': f"{type(e).__name__}: {e}", 'since': since, 'at': now}
 
                 # Cleanup
                 try:
@@ -630,6 +636,7 @@ class Bridge:
             except Exception as e:
                 logger.warning(f"Error closing source {source_name}: {e}")
         self.clients.pop(source_name, None)
+        self.mqtt_errors.pop(source_name, None)
         return {'status': 'ok', 'message': f"Source stopped: {source_name}"}
 
     def _on_record(self, row: "raw_row.RawRow", source_name: Optional[str] = None):
@@ -797,6 +804,7 @@ class Bridge:
         self.clients.clear()
         self.client_tasks.clear()
         self.host_tasks.clear()
+        self.mqtt_errors.clear()
         self.tables.clear()
         self.zerobus_enabled = False
         self.running = False
@@ -831,6 +839,9 @@ class Bridge:
                 'rebirth_refused': s['rebirth_refused'], 'block_auto_rebirth': s['block_auto_rebirth'],
                 'duplicate_aliases': s['duplicate_aliases'], 'sequence_errors': s['sequence_errors'],
             }
+            mqtt_error = self.mqtt_errors.get(name) or {}
+            h.update({'mqtt_last_error': mqtt_error.get('message'), 'mqtt_failing_since': iso(mqtt_error.get('since')),
+                      'mqtt_last_error_at': iso(mqtt_error.get('at'))})
             writer = self.writers.get(self._get_target_for_source(name))
             if writer is not None:
                 w = writer.status()

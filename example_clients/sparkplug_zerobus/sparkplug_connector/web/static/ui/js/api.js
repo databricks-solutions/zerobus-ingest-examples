@@ -121,6 +121,23 @@
     },
   };
 
+  // A source's state, the same on the Status and Sources pages: running (started on the bridge), enabled (in the
+  // file), h (its /api/sparkplug/health entry, if any). A primary host's own state follows Zerobus, so the MQTT
+  // connection decides first: a refused login is an Error, not Online.
+  window.sourceState = function (running, enabled, h) {
+    if (!running) return { text: enabled ? 'Stopped' : 'Off', cls: 'dot-err', error: '' };
+    if (!h) return { text: 'Starting…', cls: '', error: '' };
+    if (!h.mqtt_connected && h.mqtt_last_error) {
+      return { text: 'Error', cls: 'dot-err', error: 'MQTT: ' + h.mqtt_last_error + ' (failing since '
+        + window.fmt.dateTime(h.mqtt_failing_since) + ')' };
+    }
+    if (!h.mqtt_connected) {
+      return { text: h.primary_host_id && h.state !== 'ONLINE' ? 'Waiting for Zerobus' : 'Connecting…', cls: '', error: '' };
+    }
+    if (h.primary_host_id) return { text: h.mqtt_online ? 'Online' : 'Offline', cls: h.mqtt_online ? 'dot-ok' : 'dot-err', error: '' };
+    return { text: 'Subscribed', cls: 'dot-ok', error: '' };
+  };
+
   // Toasts: toast('Saved', 'ok' | 'error' | 'info').
   window.toast = function (message, kind) {
     let box = document.getElementById('toasts');

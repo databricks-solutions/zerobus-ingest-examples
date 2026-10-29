@@ -151,6 +151,7 @@ button .icon, [role="button"] .icon { margin-right: .35rem; }
 .cards > article { margin: 0; }
 article > header h2, article > header h3 { margin: 0; font-size: 1rem; }
 .error-text { color: var(--err); word-break: break-word; }
+.state-error { display: block; max-width: 28rem; }   /* a source's Error: why, under its state */
 .last-error { word-break: break-word; }             /* a writer's last error: .error-text while failing, .muted after */
 .dot { display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; margin-right: .4rem; background: var(--pico-muted-color); }
 .dot-ok { background: var(--ok); }

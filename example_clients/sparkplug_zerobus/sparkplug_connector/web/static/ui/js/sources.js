@@ -85,17 +85,13 @@ document.addEventListener('alpine:init', () => {
       return list.find((s) => s.name === source.name) || {};
     },
     isRunning(source) { return !!this.statusOf(source).running; },
-    stateClass(source) {
+    state(source) {
       const h = (Alpine.store('connector').health || {})[source.name];
-      return this.isRunning(source) && h && h.state === 'ONLINE' ? 'dot-ok' : 'dot-err';
+      return window.sourceState(this.isRunning(source), flag(source.enabled, true), h);
     },
-    stateText(source) {
-      if (this.isRunning(source)) {
-        const h = (Alpine.store('connector').health || {})[source.name];
-        return h ? (h.state === 'ONLINE' ? 'Online' : 'Offline') : 'Running';
-      }
-      return flag(source.enabled, true) ? 'Stopped' : 'Off';
-    },
+    stateClass(source) { return this.state(source).cls; },
+    stateText(source) { return this.state(source).text; },
+    stateError(source) { return this.state(source).error; },
 
     async start(source) { await this.action(source, 'start', 'Started '); },
     async stop(source) { await this.action(source, 'stop', 'Stopped '); },

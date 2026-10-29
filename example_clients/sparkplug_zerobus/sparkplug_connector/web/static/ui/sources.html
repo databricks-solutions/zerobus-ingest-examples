@@ -39,7 +39,8 @@
               <td x-text="role(source)"></td>
               <td><template x-for="t in topics(source)" :key="t"><span class="tag" x-text="t"></span></template></td>
               <td class="mono nowrap" x-text="table(source)"></td>
-              <td class="nowrap"><span class="dot" :class="stateClass(source)"></span><span x-text="stateText(source)"></span></td>
+              <td><span class="nowrap"><span class="dot" :class="stateClass(source)"></span><span x-text="stateText(source)"></span></span>
+                <small class="error-text state-error" x-show="stateError(source)" x-text="stateError(source)"></small></td>
               <td class="actions">
                 <button type="button" class="icon-btn" x-show="!isRunning(source)" @click="start(source)" title="Start" aria-label="Start source" :disabled="!can('start_stop')"><span data-icon="play"></span></button>
                 <button type="button" class="icon-btn" x-show="isRunning(source)" @click="stop(source)" title="Stop" aria-label="Stop source" :disabled="!can('start_stop')"><span data-icon="stop"></span></button>

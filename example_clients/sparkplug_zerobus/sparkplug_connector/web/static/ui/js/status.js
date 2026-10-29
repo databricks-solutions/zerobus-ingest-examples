@@ -67,24 +67,19 @@ document.addEventListener('alpine:init', () => {
       return (this.status.sources || []).map((src) => {
         const h = this.health[src.name];
         const running = !!src.running;
-        let state = running ? 'Starting…' : (src.enabled ? 'Stopped' : 'Off');
-        let stateClass = running ? 'dot-ok' : 'dot-err';
-        if (h) {
-          state = h.state === 'ONLINE' ? 'Online' : 'Offline';
-          stateClass = h.state === 'ONLINE' ? 'dot-ok' : 'dot-err';
-        }
+        const st = window.sourceState(running, src.enabled, h);
         return {
           name: src.name,
           running,
           role: h && h.primary_host_id ? 'primary host ' + h.primary_host_id : 'plain subscriber',
-          state,
-          stateClass,
+          state: st.text,
+          stateClass: st.cls,
           mqtt: h ? (h.mqtt_connected ? 'connected' : 'not connected') : '–',
           rows: h ? window.fmt.number(h.rows_written || 0) + ' written' : '–',
           zerobus: h ? (h.zerobus_failing_since ? 'failing since ' + window.fmt.dateTime(h.zerobus_failing_since)
             : (h.zerobus_stream_open ? 'stream open' : 'no stream')) : '–',
-          error: h && h.last_error ? window.fmt.dateTime(h.zerobus_last_error_at) + ': ' + h.last_error : '',
-          errorNow: !!(h && h.zerobus_failing_since),     // else the last error is history
+          error: st.error || (h && h.last_error ? window.fmt.dateTime(h.zerobus_last_error_at) + ': ' + h.last_error : ''),
+          errorNow: !!st.error || !!(h && h.zerobus_failing_since),     // else the last error is history
         };
       });
     },

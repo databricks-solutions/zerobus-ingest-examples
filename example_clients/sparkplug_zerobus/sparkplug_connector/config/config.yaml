@@ -1,6 +1,7 @@
 # The connector's configuration (the default one: edit it in place), then:
-#   1. Under zerobus:, set zerobus_endpoint, default_target (your workspace and sparkplug_raw table) and
-#      auth.client_id (a service principal with USE CATALOG, USE SCHEMA, MODIFY and SELECT on the table).
+#   1. Under zerobus:, set zerobus_endpoint, default_target (your workspace and sparkplug_raw table),
+#      auth.client_id (a service principal with USE CATALOG, USE SCHEMA, MODIFY and SELECT on the table) and
+#      enabled: true (off here, so a first start tries no table).
 #   2. Under sources:, set the example source's endpoint and username, enabled: true (it is off), and
 #      primary_host_id if the connector is the edges' primary host; add more sources the same way (a source's
 #      target_table: a table of its own).
@@ -115,7 +116,7 @@ sources:
     schema_prefix: nb
     check_views: true              # after each create_edge_node_schema call: the edge node's schema and views exist (else retried)
 zerobus:
-  enabled: true
+  enabled: false                   # off until set up: true (or "Start Zerobus with the connector" on the Zerobus page)
   zerobus_endpoint: ''             # <workspace-id>.zerobus.<region>.cloud.databricks.com
   default_target:                  # the table of every source without a target_table of its own
     workspace_host: ''             # https://<workspace>.cloud.databricks.com
