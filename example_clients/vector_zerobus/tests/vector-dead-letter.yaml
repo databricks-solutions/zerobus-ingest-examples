@@ -37,7 +37,7 @@ sinks:
     inputs: [parse_json]
     ingestion_endpoint: "SECRET[env.zerobus_endpoint]"
     unity_catalog_endpoint: "SECRET[env.workspace_url]"
-    table_name: main.default.vector_logs   # your catalog.schema.table
+    table_name: main.default.dice_logs   # your catalog.schema.table
     auth:
       strategy: oauth
       client_id: "SECRET[env.client_id]"
