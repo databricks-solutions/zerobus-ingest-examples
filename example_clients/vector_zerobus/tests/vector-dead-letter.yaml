@@ -1,0 +1,44 @@
+# Dead-letter test: reads tests/bad-records.jsonl, sends events with an event_id to the
+# table, and prints events without one to the console instead of failing the batch.
+data_dir: /tmp
+
+secret:
+  env:
+    type: exec
+    command: [/etc/vector/env-secrets.sh]
+
+sources:
+  bad_input:
+    type: file
+    include: [/etc/vector-tests/bad-records.jsonl]
+    read_from: beginning
+    data_dir: /tmp
+
+transforms:
+  parse_json:
+    type: remap
+    inputs: [bad_input]
+    source: |
+      . = parse_json!(.message)
+      if exists(.timestamp) { .timestamp = parse_timestamp!(.timestamp, "%+") }
+      if !exists(.event_id) { abort }
+    drop_on_abort: true
+    reroute_dropped: true
+
+sinks:
+  dead_letter:
+    type: console
+    inputs: [parse_json.dropped]
+    encoding:
+      codec: json
+
+  zerobus:
+    type: databricks_zerobus
+    inputs: [parse_json]
+    ingestion_endpoint: "SECRET[env.zerobus_endpoint]"
+    unity_catalog_endpoint: "SECRET[env.workspace_url]"
+    table_name: main.default.dice_logs   # your catalog.schema.table
+    auth:
+      strategy: oauth
+      client_id: "SECRET[env.client_id]"
+      client_secret: "SECRET[env.client_secret]"

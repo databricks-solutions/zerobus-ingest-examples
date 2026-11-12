@@ -53,6 +53,7 @@ If your contribution is a **complete, narrative-driven showcase** with data gene
 | [`unified_ot_zerobus`](unified_ot_zerobus/) | OPC UA, MQTT, Modbus | Python | Multi-protocol OT/IoT bridge with normalization, backpressure, and optional Web UI; forwards to Zerobus ([upstream](https://github.com/pravinva/unified-ot-zerobus-connector)) |
 | [`sparkplug_zerobus`](sparkplug_zerobus/) | Sparkplug B (MQTT) | Python | One row per Sparkplug message (Tahu JSON); primary host with store and forward, confirmed writes, write-ahead log, NBIRTH procedure call, optional Web UI ([upstream](https://github.com/nickconnors/sparkplug-zerobus-connector)) |
 | [`debezium_zerobus`](debezium_zerobus/) | SQL Server CDC via Debezium Server | SQL, Docker Compose, Bash | Streams database change events straight into Delta tables through the `databricks-zerobus` sink, with no message broker in between |
+| [`vector_zerobus`](vector_zerobus/) | Logs, metrics and traces via Vector | Python (FastAPI, OpenTelemetry), Vector config (YAML, VRL), Docker Compose | A dice-roll app sends OpenTelemetry logs, metrics and traces to Vector, which writes each signal to its own Delta table through Vector's native `databricks_zerobus` sink, with a dead-letter route for bad events |
 
 ## Planned Clients
 

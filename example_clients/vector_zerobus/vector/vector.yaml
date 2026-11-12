@@ -1,0 +1,139 @@
+# Dice roller -> Vector -> Zerobus Ingest -> Delta.
+# The app sends logs, metrics and traces over OTLP. All three go to Delta through Vector's
+# native databricks_zerobus sink, one table each. The sink accepts log events, so metrics
+# are converted with metric_to_log, and traces take a local loop (http sink -> http_server
+# source) that turns trace events into log events. Values come from .env through the exec
+# secrets backend.
+data_dir: /var/lib/vector
+
+secret:
+  env:
+    type: exec
+    command: [/etc/vector/env-secrets.sh]
+
+sources:
+  otel:
+    type: opentelemetry
+    grpc: {address: 0.0.0.0:4317}
+    http: {address: 0.0.0.0:4318}
+
+  # Receives the trace events that the traces_to_logs sink sends, as log events.
+  traces_as_logs:
+    type: http_server
+    address: 127.0.0.1:8687
+    decoding: {codec: json}
+    framing: {method: newline_delimited}
+
+transforms:
+  # One row per log record. Field names = column names in dice_logs.
+  shape_logs:
+    type: remap
+    inputs: [otel.logs]
+    source: |
+      . = {
+        "event_id": uuid_v4(),
+        "timestamp": .timestamp,
+        "service": .resources."service.name",
+        "severity": .severity_text,
+        "message": .message,
+        "player": .attributes."dice.player",
+        "result": to_int(.attributes."dice.result") ?? null,
+        "trace_id": .trace_id,
+        "span_id": .span_id
+      }
+
+  metrics_as_logs:
+    type: metric_to_log
+    inputs: [otel.metrics]
+
+  # One row per metric data point. Field names = column names in dice_metrics.
+  shape_metrics:
+    type: remap
+    inputs: [metrics_as_logs]
+    source: |
+      value = .counter.value
+      if value == null { value = .gauge.value }
+      . = {
+        "event_id": uuid_v4(),
+        "timestamp": .timestamp,
+        "service": .tags."resource.service.name",
+        "metric": .name,
+        "kind": .kind,
+        "value": value,
+        "result": .tags."dice.result"
+      }
+
+  # One row per span. Field names = column names in dice_traces.
+  shape_traces:
+    type: remap
+    inputs: [traces_as_logs]
+    source: |
+      parent = if .parent_span_id == "" { null } else { .parent_span_id }
+      start = parse_timestamp!(.start_time_unix_nano, "%+")
+      end = parse_timestamp!(.end_time_unix_nano, "%+")
+      dur_ns = (to_unix_timestamp(end, unit: "nanoseconds") - to_unix_timestamp(start, unit: "nanoseconds")) ?? 0
+      . = {
+        "trace_id": .trace_id,
+        "span_id": .span_id,
+        "parent_span_id": parent,
+        "name": .name,
+        "start_time": start,
+        "end_time": end,
+        "duration_ms": to_float(dur_ns) / 1000000.0,
+        "service": .resources."service.name",
+        "player": .attributes."dice.player",
+        "result": to_int(.attributes."dice.result") ?? null,
+        "status_code": .status.code
+      }
+
+sinks:
+  # The native sink takes log events only, so trace events loop back through Vector
+  # as JSON and arrive at the traces_as_logs source above.
+  traces_to_logs:
+    type: http
+    inputs: [otel.traces]
+    uri: http://127.0.0.1:8687/
+    encoding: {codec: json}
+    framing: {method: newline_delimited}
+
+  dice_logs:
+    type: databricks_zerobus
+    inputs: [shape_logs]
+    ingestion_endpoint: "SECRET[env.zerobus_endpoint]"
+    unity_catalog_endpoint: "SECRET[env.workspace_url]"
+    table_name: main.default.dice_logs   # your catalog.schema.table
+    auth:
+      strategy: oauth
+      client_id: "SECRET[env.client_id]"
+      client_secret: "SECRET[env.client_secret]"
+    buffer:
+      type: disk
+      max_size: 268435488
+
+  dice_metrics:
+    type: databricks_zerobus
+    inputs: [shape_metrics]
+    ingestion_endpoint: "SECRET[env.zerobus_endpoint]"
+    unity_catalog_endpoint: "SECRET[env.workspace_url]"
+    table_name: main.default.dice_metrics   # your catalog.schema.table
+    auth:
+      strategy: oauth
+      client_id: "SECRET[env.client_id]"
+      client_secret: "SECRET[env.client_secret]"
+    buffer:
+      type: disk
+      max_size: 268435488
+
+  dice_traces:
+    type: databricks_zerobus
+    inputs: [shape_traces]
+    ingestion_endpoint: "SECRET[env.zerobus_endpoint]"
+    unity_catalog_endpoint: "SECRET[env.workspace_url]"
+    table_name: main.default.dice_traces   # your catalog.schema.table
+    auth:
+      strategy: oauth
+      client_id: "SECRET[env.client_id]"
+      client_secret: "SECRET[env.client_secret]"
+    buffer:
+      type: disk
+      max_size: 268435488

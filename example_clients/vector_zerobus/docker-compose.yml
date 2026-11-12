@@ -1,0 +1,28 @@
+services:
+  # The app: GET /rolldice rolls a die and emits a log, a span and a metric over OTLP.
+  dice-app:
+    build: ./app
+    environment:
+      OTEL_SERVICE_NAME: dice-roller
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://vector:4317
+    ports: ["8000:8000"]
+    depends_on: [vector]
+
+  # Rolls the dice once a second, as different players.
+  traffic:
+    image: curlimages/curl:8.10.1
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["while true; do for p in ada grace linus; do curl -s \"http://dice-app:8000/rolldice?player=$$p\" >/dev/null; sleep 1; done; done"]
+    depends_on: [dice-app]
+
+  vector:
+    image: timberio/vector:0.61.0-debian
+    env_file: .env
+    volumes:
+      - ./vector:/etc/vector:ro
+      - vector-data:/var/lib/vector
+    command: ["--config", "/etc/vector/vector.yaml"]
+    restart: unless-stopped
+
+volumes:
+  vector-data:
