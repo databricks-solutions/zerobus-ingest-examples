@@ -411,6 +411,10 @@ PY
 # with AccessDeniedException. The OAuth secret is passed as an environment variable
 # instead, so there is nothing in this file that needs guarding.
 chmod 644 "$HERE/conf/application.properties"
+# The SQL Server containers run as their own user too and read sqlserver/ through a
+# bind mount. A checkout made under a strict umask (027, say) leaves it unreadable to
+# them, and sqlcmd then reports only "Invalid filename".
+chmod -R a+rX "$HERE/sqlserver"
 echo "  written (gitignored; the OAuth secret is passed via the environment, not this file)"
 
 # ---- [8/8] done -----------------------------------------------------------
