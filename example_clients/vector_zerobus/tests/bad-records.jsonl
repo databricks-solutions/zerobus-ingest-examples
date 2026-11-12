@@ -1,0 +1,3 @@
+{"event_id":"test-good-1","timestamp":"2026-01-01T00:00:00Z","host":"h1","service":"svc","severity":"info","message":"good before"}
+{"timestamp":"2026-01-01T00:00:01Z","host":"h1","service":"svc","severity":"info","message":"missing event_id"}
+{"event_id":"test-good-2","timestamp":"2026-01-01T00:00:02Z","host":"h1","service":"svc","severity":"info","message":"good after"}

@@ -1,0 +1,12 @@
+services:
+  vector:
+    image: timberio/vector:0.61.0-debian
+    env_file: .env
+    volumes:
+      - ./vector:/etc/vector:ro
+      - vector-data:/var/lib/vector
+    command: ["--config", "/etc/vector/vector.yaml"]
+    restart: unless-stopped
+
+volumes:
+  vector-data:

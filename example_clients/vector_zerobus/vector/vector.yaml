@@ -1,0 +1,46 @@
+# Vector -> Zerobus Ingest -> Delta. Values come from .env through the exec secrets backend.
+data_dir: /var/lib/vector
+
+secret:
+  env:
+    type: exec
+    command: [/etc/vector/env-secrets.sh]
+
+sources:
+  # Sample syslog lines. Replace with the source you already run (file, kubernetes_logs, syslog, ...).
+  sample_logs:
+    type: demo_logs
+    format: syslog
+    interval: 1
+
+transforms:
+  # Shape each event to match the table's columns (field names = column names).
+  shape_for_table:
+    type: remap
+    inputs: [sample_logs]
+    source: |
+      parsed = parse_syslog!(.message)
+      . = {
+        "event_id": uuid_v4(),
+        "timestamp": parsed.timestamp,
+        "host": parsed.hostname,
+        "service": parsed.appname,
+        "severity": parsed.severity,
+        "message": redact(parsed.message, filters: ["us_social_security_number"])
+      }
+
+sinks:
+  zerobus:
+    type: databricks_zerobus
+    inputs: [shape_for_table]
+    ingestion_endpoint: "SECRET[env.zerobus_endpoint]"
+    unity_catalog_endpoint: "SECRET[env.workspace_url]"
+    table_name: main.default.vector_logs   # your catalog.schema.table
+    auth:
+      strategy: oauth
+      client_id: "SECRET[env.client_id]"
+      client_secret: "SECRET[env.client_secret]"
+    # Keep buffered events across a crash (in-memory events are lost on a hard kill).
+    buffer:
+      type: disk
+      max_size: 268435488
