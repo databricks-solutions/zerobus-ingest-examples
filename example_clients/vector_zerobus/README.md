@@ -134,8 +134,8 @@ ORDER BY result;
 ```
 
 A roll happens about every second, and the counter exports every 10 seconds. In our test
-run, logs, metrics and traces all landed within a minute, and every log row joined to
-its span.
+run, logs, metrics and traces all landed within a minute, and the log rows joined to
+their spans on `trace_id` and `span_id`.
 
 To roll by hand: `curl "http://localhost:8000/rolldice?player=you"`.
 
