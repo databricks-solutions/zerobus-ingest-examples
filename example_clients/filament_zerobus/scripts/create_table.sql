@@ -1,6 +1,7 @@
 -- Delta tables for the demo, created by you (Filament doesn't need to create them).
--- Replace <catalog>, <schema>, <cdc-schema> and <service-principal-uuid> (TARGET_CATALOG, TARGET_SCHEMA,
--- TARGET_CDC_SCHEMA and DATABRICKS_CLIENT_ID), then run it in Databricks SQL.
+-- Replace <catalog>, <schema> and <cdc-schema> (TARGET_CATALOG, TARGET_SCHEMA and TARGET_CDC_SCHEMA), then run
+-- it in Databricks SQL. Grant the service principal access to the catalog, schemas and tables before the first
+-- run, as step 3 of the README describes.
 -- The columns follow the PostgreSQL tables in seed_source.sql. Keep each NOT NULL exactly where the source
 -- column is NOT NULL: a mismatch fails the stream with Error Code 8001. Filament's lineage columns come last.
 
@@ -29,10 +30,3 @@ CREATE TABLE IF NOT EXISTS <catalog>.<cdc-schema>.payments (
   _filament_source_position STRING,
   _filament_sequence        BIGINT
 ) USING DELTA;
-
--- Grants for the service principal, before the first run (Zerobus Ingest binds the table when a stream opens).
-GRANT USE CATALOG ON CATALOG <catalog> TO `<service-principal-uuid>`;
-GRANT USE SCHEMA ON SCHEMA <catalog>.<schema> TO `<service-principal-uuid>`;
-GRANT USE SCHEMA ON SCHEMA <catalog>.<cdc-schema> TO `<service-principal-uuid>`;
-GRANT SELECT, MODIFY ON TABLE <catalog>.<schema>.orders TO `<service-principal-uuid>`;
-GRANT SELECT, MODIFY ON TABLE <catalog>.<cdc-schema>.payments TO `<service-principal-uuid>`;

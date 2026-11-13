@@ -1,7 +1,8 @@
 #!/bin/sh
 # Creates the Filament objects for the demo: a CLI context for the local server, two PostgreSQL sources
 # (one with replication for CDC), the Zerobus sink, and the two pipelines. Run it once, after the stack
-# is up and create_table.sql has run. It reads its settings from the environment (see the README), so
+# is up, create_table.sql has run, and the grants in step 3 of the README are in place. It reads its settings
+# from the environment (see the README), so
 # load them first: set -a; . ./.env; set +a
 set -eu
 
