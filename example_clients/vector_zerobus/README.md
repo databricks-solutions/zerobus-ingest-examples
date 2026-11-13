@@ -1,4 +1,4 @@
-# Vector Zerobus: an app's logs, metrics and traces into Delta with the native sink
+# Vector and Zerobus Ingest: an app's logs, metrics and traces into Delta with the native sink
 
 This example sends an app's OpenTelemetry logs, metrics and traces through
 [Vector](https://vector.dev/) straight into Unity Catalog Delta tables, using Vector's native
@@ -56,8 +56,9 @@ The whole thing runs with `docker compose up`.
   literal text. This example passes the endpoints and credentials through Vector's `exec`
   [secrets backend](https://vector.dev/docs/reference/configuration/secrets/)
   (`vector/env-secrets.sh`), which reads them from the container's environment.
-- **Durability:** each sink uses a disk buffer, so events Vector has accepted survive a crash
-  or a forced stop. The sink waits for Zerobus to acknowledge each batch before it reports
+- **Durability:** each sink uses a disk buffer, so events already written to the buffer
+  survive a crash. Events still in the source or a transform when Vector is forced to stop
+  can be lost. The sink waits for Zerobus to acknowledge each batch before it reports
   the batch delivered. Each event can be delivered one or more times, so dedupe on `event_id` (logs, metrics)
   or `span_id` (traces).
 - **Bad records:** `tests/vector-dead-letter.yaml` shows how to route events that would
@@ -76,7 +77,7 @@ SDK 1.33.1.
   Note its application ID and secret.
 - Your Zerobus Ingest endpoint and workspace URL
   ([where to find them](https://docs.databricks.com/ingestion/zerobus-ingest#get-your-workspace-url-and-zerobus-ingest-endpoint)).
-- Network access from the Vector host to both on port 443.
+- Network access on port 443 from the Vector host to the Zerobus Ingest endpoint and the workspace URL.
 
 ## Quick start
 
@@ -162,7 +163,7 @@ A normal stop sends the events Vector is holding before it exits.
 `docker-compose.yml` sets the app's `OTEL_SERVICE_NAME` (`dice-roller`) and
 `OTEL_EXPORTER_OTLP_ENDPOINT` (`http://vector:4317`).
 
-`vector/vector.yaml`, the sink options this example sets on each of the three sinks:
+The sink options that `vector/vector.yaml` sets on each of the three sinks:
 
 | Option | Value here | Description |
 |---|---|---|
@@ -246,11 +247,12 @@ How events map to a table:
   so their fields match your tables' columns. Keep the attributes you query by as columns.
 - **Add columns:** Add the column to the table first, then set the field in `remap`. Fields
   with no column are skipped, so the order doesn't break the pipeline.
-- **Route bad events to a dead letter:** `tests/vector-dead-letter.yaml` checks a required
-  field with `abort`, sets `drop_on_abort: true` and `reroute_dropped: true`, and sends
-  `parse_json.dropped` to a `console` sink. Swap `console` for `file` to keep them.
-  `./tests/run_tests.sh --live` runs it against `dice_logs`: two rows land and one event
-  prints as dead-lettered.
+- **Route bad events to a dead letter:** `tests/vector-dead-letter.yaml` checks that
+  `event_id` exists and isn't null with `abort`, sets `drop_on_abort: true`,
+  `drop_on_error: true` (so a line that isn't JSON is rerouted too) and
+  `reroute_dropped: true`, and sends `parse_json.dropped` to a `console` sink. Swap
+  `console` for `file` to keep them. `./tests/run_tests.sh --live` runs it against
+  `dice_logs`: two rows land and three events print as dead-lettered.
 - **Send to more tables:** Add another `databricks_zerobus` sink with its own `table_name`,
   fed by a `route` or `filter` transform, for example one table per service.
 - **Tune throughput:** Raise `batch.max_bytes` (keep it at or below 10 MB) or set
