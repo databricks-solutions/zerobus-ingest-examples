@@ -57,8 +57,8 @@ The whole thing runs with `docker compose up`.
   [secrets backend](https://vector.dev/docs/reference/configuration/secrets/)
   (`vector/env-secrets.sh`), which reads them from the container's environment.
 - **Durability:** each sink uses a disk buffer, so events Vector has accepted survive a crash
-  or a hard kill. The sink waits for Zerobus to acknowledge each batch before it reports
-  the batch delivered. Delivery is at least once, so dedupe on `event_id` (logs, metrics)
+  or a forced stop. The sink waits for Zerobus to acknowledge each batch before it reports
+  the batch delivered. Each event can be delivered one or more times, so dedupe on `event_id` (logs, metrics)
   or `span_id` (traces).
 - **Bad records:** `tests/vector-dead-letter.yaml` shows how to route events that would
   break a batch to a dead-letter sink, so the good events still land.
@@ -107,9 +107,9 @@ docker compose up -d --build
 docker compose logs -f vector
 ```
 
-Within a few seconds Vector logs, once per sink:
+Typically within a few seconds, Vector logs one line per sink:
 
-```
+```output
 INFO databricks_zerobus_ingest_sdk::stream::arrow: Arrow Flight stream created successfully table_name=<catalog>.<schema>.dice_logs
 INFO vector::topology::builder: Healthcheck passed.
 ```
@@ -134,8 +134,8 @@ ORDER BY result;
 ```
 
 A roll happens about every second, and the counter exports every 10 seconds. In our test
-run, logs, metrics and traces all landed within a minute, and every log row joined to
-its span.
+run, logs, metrics and traces all landed within a minute, and the log rows joined to
+their spans on `trace_id` and `span_id`.
 
 To roll by hand: `curl "http://localhost:8000/rolldice?player=you"`.
 
@@ -190,7 +190,7 @@ Other options worth knowing (see the
 | `event_id` | `STRING` | `uuid_v4()`, a unique ID per event, used for dedupe |
 | `timestamp` | `TIMESTAMP` | The log record's timestamp |
 | `service` | `STRING` | Resource attribute `service.name` |
-| `severity` | `STRING` | `severity_text`, such as `INFO` or `WARN` (a six logs a warning) |
+| `severity` | `STRING` | `severity_text`, such as `INFO` or `WARN` (a roll of six logs a warning) |
 | `message` | `STRING` | The log message, such as `ada rolled a 4` |
 | `player`, `result` | `STRING`, `INT` | Log attributes `dice.player` and `dice.result` |
 | `trace_id`, `span_id` | `STRING` | The span the record was logged under |
@@ -224,7 +224,7 @@ How events map to a table:
 - Top-level event fields map to columns by name.
 - A field with no matching column isn't sent, and a column with no matching field is written as `NULL`.
 - The sink reads the schema from Unity Catalog at startup, so there's no schema in the Vector config.
-- Keep columns nullable. If a column is `NOT NULL` and one event in a batch is missing it, the sink drops the **whole batch** and doesn't retry it.
+- Keep columns nullable. If a column is `NOT NULL` and one event in a batch is missing it, the sink drops the whole batch and doesn't retry it.
 - The sink doesn't support `VARIANT` columns.
 
 ## Troubleshooting
@@ -237,23 +237,23 @@ How events map to a table:
 | `Schema constraint violation … Null value for non-nullable field '<column>'` and `Events dropped … count=<N>` | A `NOT NULL` column is missing on at least one event, so the whole batch was dropped. Make it nullable, set it in `remap`, or use the dead-letter route below |
 | The app logs `Transient error StatusCode.UNAVAILABLE … exporting … to …:4317, retrying in <N>s` | Vector isn't reachable. The OpenTelemetry exporter retries with backoff (up to 32 s here) and resumes on its own after a short outage; events in flight when Vector stops can be lost |
 | Health check fails but Vector keeps running | That's Vector's default. Start Vector with `--require-healthy` to exit instead |
-| Duplicate rows | Delivery is at least once. Dedupe on `event_id` or `span_id`, for example with `ROW_NUMBER()` in a view |
+| Duplicate rows | Each event can be delivered one or more times. Dedupe on `event_id` or `span_id`, for example with `ROW_NUMBER()` in a view |
 
 ## How to extend
 
-- **Use your own app.** Point any OpenTelemetry SDK or Collector at Vector's
+- **Use your own app:** Point any OpenTelemetry SDK or Collector at Vector's
   `opentelemetry` source (`:4317` gRPC, `:4318` HTTP), then change the `shape_*` transforms
   so their fields match your tables' columns. Keep the attributes you query by as columns.
-- **Add columns.** Add the column to the table first, then set the field in `remap`. Fields
+- **Add columns:** Add the column to the table first, then set the field in `remap`. Fields
   with no column are skipped, so the order doesn't break the pipeline.
-- **Route bad events to a dead letter.** `tests/vector-dead-letter.yaml` checks a required
+- **Route bad events to a dead letter:** `tests/vector-dead-letter.yaml` checks a required
   field with `abort`, sets `drop_on_abort: true` and `reroute_dropped: true`, and sends
   `parse_json.dropped` to a `console` sink. Swap `console` for `file` to keep them.
   `./tests/run_tests.sh --live` runs it against `dice_logs`: two rows land and one event
   prints as dead-lettered.
-- **Send to more tables.** Add another `databricks_zerobus` sink with its own `table_name`,
+- **Send to more tables:** Add another `databricks_zerobus` sink with its own `table_name`,
   fed by a `route` or `filter` transform, for example one table per service.
-- **Tune throughput.** Raise `batch.max_bytes` (keep it at or below 10 MB) or set
+- **Tune throughput:** Raise `batch.max_bytes` (keep it at or below 10 MB) or set
   `stream_options.compression: zstd` to cut network egress.
 
 ## File reference
