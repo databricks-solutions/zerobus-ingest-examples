@@ -110,11 +110,11 @@ Flags:
 - `-v` — verbose output
 - `-d` — debug output
 
-You should see syslog-ng load the `otel` and `cloud_auth` modules, then a line like:
+You should see syslog-ng load the `otel` and `cloud_auth` modules, start its worker threads, and then print a line like:
 ```
-Syslog connection established; ...
+syslog-ng starting up; version='4.12.0'
 ```
-This confirms syslog-ng has connected to Zerobus and obtained an OAuth token.
+syslog-ng 4.12.0 doesn't print a line when it connects to Zerobus Ingest, so confirm the connection with the query in Step 7 after the Flask app is sending logs.
 
 Leave this terminal open and running.
 
@@ -257,3 +257,45 @@ Verify your `workspace_id` and `workspace_region` form the correct Zerobus endpo
 
 **`Zerobus Ingest` in Beta notice:**
 This feature is currently in Beta. For limits and quotas, see [Zerobus Ingest limits](https://docs.databricks.com/aws/en/ingestion/zerobus-limits).
+
+## Schema
+
+The table is created by `create_table.sql`. It uses the OpenTelemetry logs layout (`otel.schemaVersion = v2`). Zerobus Ingest doesn't create tables, so run the DDL first. Each row is one syslog message.
+
+| Column | Type | What the demo writes |
+|---|---|---|
+| `record_id` | STRING | Not set by `syslog-ng.conf`. Each row in the test run had a distinct value. |
+| `time` | TIMESTAMP | The event time from the syslog message. `time_unix_nano` is set from `$S_UNIXTIME`. |
+| `date` | DATE | Not set by `syslog-ng.conf`. |
+| `service_name` | STRING | `$PROGRAM`, the program name (for example `health-monitor`). |
+| `event_name` | STRING | Not set by `syslog-ng.conf`. The event name is in `attributes` as `event.name`. |
+| `trace_id` | STRING | An empty string. Syslog messages carry no trace context. |
+| `span_id` | STRING | An empty string. Syslog messages carry no trace context. |
+| `time_unix_nano` | LONG | `$S_UNIXTIME` in nanoseconds. |
+| `observed_time_unix_nano` | LONG | `$R_UNIXTIME` in nanoseconds, when syslog-ng received the message. |
+| `severity_number` | STRING | The OpenTelemetry severity for the syslog level, such as `SEVERITY_NUMBER_INFO`. See the severity note below. |
+| `severity_text` | STRING | `FATAL`, `ERROR`, `WARNING`, `INFO` or `DEBUG`, from the syslog level. |
+| `body` | VARIANT | `$MESSAGE`, the message text. |
+| `attributes` | VARIANT | `host.name`, `process.pid`, `syslog.facility`, `syslog.facility.code`, `syslog.priority` and `event.name`. |
+| `dropped_attributes_count` | INT | Not set by `syslog-ng.conf`. |
+| `flags` | INT | Not set by `syslog-ng.conf`. |
+| `resource` | STRUCT | `attributes` holds `service.name`, from `$PROGRAM`. |
+| `resource_schema_url` | STRING | Not set by `syslog-ng.conf`. |
+| `instrumentation_scope` | STRUCT | `name` is `syslog-ng-otel-exporter`. |
+| `log_schema_url` | STRING | Not set by `syslog-ng.conf`. |
+
+The `rewrite r_to_otlp` block sets the `.otel.*` paths that become these columns. `.otel.resource.attributes.service.name` becomes `service_name`, and `.otel.log.body` becomes `body`. Other `.otel.log.attributes.*` paths go into `attributes`. Because `attributes` is a VARIANT column, a new attribute needs no table change. A new top-level column needs an `ALTER TABLE` on the table first, because Zerobus Ingest doesn't evolve the table itself. Adding a nullable column doesn't break existing senders ([Zerobus Ingest schema management](https://docs.databricks.com/aws/en/ingestion/zerobus-schema-management)).
+
+Syslog levels (0 to 7) are not OpenTelemetry severity numbers. Setting `severity_number` from `$LEVEL_NUM` gives the wrong names, for example `SEVERITY_NUMBER_DEBUG2` for INFO. The `if` and `elif` block in the `log` path maps each level to its number and text instead. Also, syslog-ng writes `$LEVEL` in uppercase, so an error is `ERR` there, and the `ERROR` text comes from the mapping.
+
+`body` and `attributes` are VARIANT. Use `body::string` and `attributes:['host.name']::string`. Querying VARIANT needs Databricks Runtime 15.3 and above. For variant shredding, use Databricks Runtime 17.2 and above.
+
+The DDL sets the variant features with the `-preview` suffix, as in this file. These are the names this example was run with. [Configure OTLP clients](https://docs.databricks.com/aws/en/ingestion/opentelemetry/configure) lists the same features without the suffix. Check which names your runtime accepts before you rely on them.
+
+## How to extend
+
+- **Other log sources**: Replace `source s_flask` with another source, and keep the rewrite and the destination. The [system() source](https://syslog-ng.github.io/admin-guide/060_Sources/180_System/README) automatically collects the host's system-specific log messages on a number of platforms. A [network() source](https://syslog-ng.github.io/admin-guide/060_Sources/070_Network/README) receives messages from remote hosts over TCP or UDP. The [file() source](https://syslog-ng.github.io/admin-guide/060_Sources/020_File/README) is kept for compatibility, and syslog-ng recommends [wildcard-file()](https://syslog-ng.github.io/admin-guide/060_Sources/021_Wildcard-file/000_Wildcard-file_options) for regular files. On a `network()` source, `keep-hostname(yes)` keeps the host name from the message as `$HOST`. With `keep-hostname(no)`, syslog-ng rewrites `$HOST` to the sending host ([network() source options](https://syslog-ng.github.io/admin-guide/060_Sources/070_Network/000_Network_source_options)).
+- **More fields**: Add a `set("$SOMETHING" value(".otel.log.attributes.your.key"));` line in `r_to_otlp`. New messages carry the field in `attributes`.
+- **More severity or text mapping**: Add a branch to the `if` and `elif` block for the level you need. Its rewrite should set both `severity_number` and `severity_text`, and it should write the number as an expression such as `"$(+ 0 17)"`.
+- **More destinations**: A second `opentelemetry()` destination needs its own `x-databricks-zerobus-table-name` header, because each request targets a single table, and its own OAuth `authorization_details` for that table. If syslog-ng reports duplicate persist names at startup, give the destination an explicit `persist-name()` ([opentelemetry() destination options](https://syslog-ng.github.io/admin-guide/070_Destinations/157_OpenTelemetry/000_opentelemetry-destination-options)). Add it to the `log` path with `destination(...)`.
+- **Durability**: This example has no disk buffer, so messages held in memory are lost when syslog-ng stops. Add a `disk-buffer()` to the destination to keep them. The [syslog-ng buffering documentation](https://syslog-ng.github.io/admin-guide/080_Log/020_Buffering/README) describes the options. This example hasn't tested a disk buffer.
