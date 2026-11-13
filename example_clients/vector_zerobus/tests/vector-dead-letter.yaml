@@ -1,5 +1,6 @@
 # Dead-letter test: reads tests/bad-records.jsonl, sends events with an event_id to the
-# table, and prints events without one to the console instead of failing the batch.
+# table, and prints the rest (no event_id, a null event_id, or a line that isn't JSON)
+# to the console instead of failing the batch.
 data_dir: /tmp
 
 secret:
@@ -21,8 +22,9 @@ transforms:
     source: |
       . = parse_json!(.message)
       if exists(.timestamp) { .timestamp = parse_timestamp!(.timestamp, "%+") }
-      if !exists(.event_id) { abort }
+      if !exists(.event_id) || .event_id == null { abort }
     drop_on_abort: true
+    drop_on_error: true
     reroute_dropped: true
 
 sinks:
