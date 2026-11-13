@@ -27,6 +27,7 @@ In this repo, you will find examples and demos of Zerobus Ingest, a push-based A
 * [Sparkplug B Zerobus](./example_clients/sparkplug_zerobus/) - Write every Sparkplug B message (e.g. Ignition MQTT Transmission) to a Delta table as Tahu JSON, as the edges' primary host (store and forward) or a plain subscriber, with confirmed writes and a write-ahead log ([upstream source](https://github.com/nickconnors/sparkplug-zerobus-connector))
 * [Debezium Zerobus](./example_clients/debezium_zerobus/) - Replicate SQL Server change data capture into Delta tables using Debezium Server's native Zerobus sink, with no Kafka or Connect cluster
 * [Vector Zerobus](./example_clients/vector_zerobus/) - Send an app's OpenTelemetry logs, metrics and traces through Vector into Delta tables with its native `databricks_zerobus` sink, with no message bus in between
+* [Filament Zerobus](./example_clients/filament_zerobus/) - Replicate PostgreSQL tables into Delta tables with Filament's native Zerobus sink, as full copies and as CDC change history, from one Docker Compose stack
 * [GenAI Agent Zerobus](./example_clients/genai_agent_zerobus/) - Ship a Python GenAI agent's OpenTelemetry traces, logs, and metrics into Delta tables via Zerobus, then view them as agentic traces in MLflow (LangChain example + drop-in exporter)
 
 *Coming soon* - MQTT and more.

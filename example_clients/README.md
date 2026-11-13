@@ -54,6 +54,7 @@ If your contribution is a **complete, narrative-driven showcase** with data gene
 | [`sparkplug_zerobus`](sparkplug_zerobus/) | Sparkplug B (MQTT) | Python | One row per Sparkplug message (Tahu JSON); primary host with store and forward, confirmed writes, write-ahead log, NBIRTH procedure call, optional Web UI ([upstream](https://github.com/nickconnors/sparkplug-zerobus-connector)) |
 | [`debezium_zerobus`](debezium_zerobus/) | SQL Server CDC via Debezium Server | SQL, Docker Compose, Bash | Streams database change events straight into Delta tables through the `databricks-zerobus` sink, with no message broker in between |
 | [`vector_zerobus`](vector_zerobus/) | Logs, metrics and traces via Vector | Python (FastAPI, OpenTelemetry), Vector config (YAML, VRL), Docker Compose | A dice-roll app sends OpenTelemetry logs, metrics and traces to Vector, which writes each signal to its own Delta table through Vector's native `databricks_zerobus` sink, with a dead-letter route for bad events |
+| [`filament_zerobus`](filament_zerobus/) | PostgreSQL (full snapshots and CDC) via Filament | Docker Compose, SQL, Bash | Replicates PostgreSQL tables into Delta tables with Filament's native `databrickszerobus` sink, running Filament's server, control plane and `-libc` worker with PostgreSQL and NATS JetStream |
 
 ## Planned Clients
 
