@@ -1,0 +1,87 @@
+# Filament 0.42.0, split deployment for the Zerobus Ingest demo: PostgreSQL (Filament's datastore and
+# the source database), NATS JetStream, a migration step, the server, the control plane with
+# DISPATCH_MODE=worker, and a long-lived worker. The worker must use the -libc image, because the
+# Zerobus sink is only compiled into that image.
+name: filament-zerobus-demo
+
+x-runtime: &runtime
+  PERSISTENCE_PROVIDER: postgres
+  PERSISTENCE_DSN: postgres://filament:${POSTGRES_PASSWORD}@postgres:5432/filament?sslmode=disable
+  EVENTBUS_PROVIDER: nats
+  NATS_URL: nats://nats:4222
+  NATS_STREAM: EVENTBUS
+  NATS_SUBJECTS: ingestion.v1.>
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+  ENCRYPTION_KEY_ID: default
+  LOG_LEVEL: INFO
+
+services:
+  postgres:
+    image: postgres:16
+    # wal_level=logical lets the CDC pipeline read the payments table.
+    command: ["postgres", "-c", "wal_level=logical"]
+    environment:
+      POSTGRES_USER: filament
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: filament
+      TABLE_PREFIX: ${TABLE_PREFIX:-}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init_source.sh:/docker-entrypoint-initdb.d/10-init-source.sh:ro
+      - ./scripts/seed_source.sql:/seed/seed_source.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U filament -d filament"]
+      interval: 2s
+      retries: 30
+
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8222/healthz > /dev/null"]
+      interval: 2s
+      retries: 30
+
+  migrate:
+    image: ghcr.io/galaxy-io/filament/server:0.42.0
+    command: ["-migrate"]
+    environment: *runtime
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  server:
+    image: ghcr.io/galaxy-io/filament/server:0.42.0
+    environment:
+      <<: *runtime
+      SERVER_ADDR: 0.0.0.0:8080
+      WORKER_URL: http://worker:8081
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      nats: {condition: service_healthy}
+
+  control-plane:
+    image: ghcr.io/galaxy-io/filament/control-plane:0.42.0
+    environment:
+      <<: *runtime
+      HEALTH_ADDR: 0.0.0.0:8082
+      DISPATCH_MODE: worker
+      WORKER_URL: http://worker:8081
+    ports: ["127.0.0.1:8082:8082"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      nats: {condition: service_healthy}
+
+  worker:
+    image: ghcr.io/galaxy-io/filament/worker:0.42.0-libc
+    command: ["-serve", "-execute"]
+    environment:
+      <<: *runtime
+      WORKER_ADDR: 0.0.0.0:8081
+    ports: ["127.0.0.1:8081:8081"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      nats: {condition: service_healthy}
+
+volumes:
+  pgdata:
