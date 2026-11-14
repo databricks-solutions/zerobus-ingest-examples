@@ -127,8 +127,7 @@ table names.
 
 Then grant the service principal `USE CATALOG` on the catalog, `USE SCHEMA` on each schema, and `SELECT` and
 `MODIFY` on each table, as [Zerobus Ingest service principal setup](https://docs.databricks.com/ingestion/zerobus-ingest#service-principal)
-describes. Filament's sink documentation notes that Zerobus Ingest binds the table name when a stream opens,
-so a grant added later fails with a `401`. Grant before the first run.
+describes. Grant before the first run, as Filament's sink documentation requires.
 
 ### 4. Create the source, the sink and the pipelines
 
@@ -260,8 +259,8 @@ it doesn't, so `created_at` must stay `NOT NULL` in Delta.
 | `run overlaps an active replication route` | An earlier run is still `RUNNING` because its worker stopped mid-run. The worker-dispatch layout has no reaper, so new runs of that pipeline are refused. In testing, cancel and pause requests waited for the dead worker, and the CLI has no cancel command. | Rows already written stay in the table. Drop them by the stranded run's `_filament_run_id`. Use Kubernetes dispatch in production, where a reaper fails runs whose worker stops reporting. This path wasn't tested. |
 | `workspace_url must be an absolute https URL` | `DATABRICKS_WORKSPACE_URL` is `http://`, or missing its scheme. | Use `https://<workspace-url>`. |
 | `Scopes 'all-apis' are not assigned to the client` | Per Filament's sink documentation, the OAuth secret was generated without the `all-apis` scope. | Create a new secret with that scope and update `DATABRICKS_CLIENT_SECRET`. |
-| Every token request fails | Per Filament's sink documentation, every token request fails without the Workspace access entitlement, which the service principal lacks. | Add the entitlement to the service principal. |
-| `401` or `invalid_authorization_details` | Per Filament's sink documentation, the service principal lacks `USE SCHEMA` on the schema or `SELECT, MODIFY` on the table. It also notes that a grant added after the run started fails the same way. | Grant the privileges from [step 3](#3-create-the-delta-tables), then run the pipeline again. |
+| Every token request fails | Zerobus Ingest requires the Workspace access entitlement, and the service principal lacks it. | Add the entitlement to the service principal. |
+| `401` or `invalid_authorization_details` | The service principal lacks `USE SCHEMA` on the schema or `SELECT, MODIFY` on the table. | Grant the privileges from [step 3](#3-create-the-delta-tables), then run the pipeline again. |
 | `Connector databrickszerobus not found` | The worker isn't the `0.42.0-libc` image. | Use the `-libc` worker tag in `docker-compose.yml`. |
 | `Context "zerobus-demo" already exists (remote); replace it?` when you run `setup.sh` a second time | `setup.sh` creates the context and the objects one time. The script stops at the first prompt. | Start over with `docker compose down -v` and `filament context delete zerobus-demo`, as in [Stop](#7-stop). |
 | The count is still the old total right after `completed` | Delta shows the new rows about 20 seconds after Filament reports the run. | Wait about 20 seconds, then query. |
