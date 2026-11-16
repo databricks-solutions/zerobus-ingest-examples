@@ -1,0 +1,45 @@
+# Telegraf configuration for the Telegraf Zerobus example. Copy to /etc/telegraf/telegraf.conf and
+# replace every <placeholder>. Export DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET before Telegraf starts.
+
+[agent]
+  interval = "5s"
+  flush_interval = "5s"
+  metric_batch_size = 1000
+  metric_buffer_limit = 10000
+
+# Mints and renews the service principal's OAuth token. The output reads it as @{zbauth:zbtoken}.
+[[secretstores.oauth2]]
+  id = "zbauth"
+  service = "custom"
+  token_endpoint = "https://<workspace-url>/oidc/v1/token"
+  token_expiry_margin = "30s"
+  [[secretstores.oauth2.token]]
+    key = "zbtoken"
+    client_id = "${DATABRICKS_CLIENT_ID}"
+    client_secret = "${DATABRICKS_CLIENT_SECRET}"
+    scopes = ["all-apis"]
+    [secretstores.oauth2.token.parameters]
+      resource = "api://databricks/workspaces/<workspace-id>/zerobusDirectWriteApi"
+      authorization_details = '[{"type":"unity_catalog_privileges","privileges":["USE CATALOG"],"object_type":"CATALOG","object_full_path":"<catalog>"},{"type":"unity_catalog_privileges","privileges":["USE SCHEMA"],"object_type":"SCHEMA","object_full_path":"<catalog>.<schema>"},{"type":"unity_catalog_privileges","privileges":["SELECT","MODIFY"],"object_type":"TABLE","object_full_path":"<catalog>.<schema>.<table>"}]'
+
+[[inputs.cpu]]
+  percpu = false
+  totalcpu = true
+
+[[inputs.mem]]
+
+# The dice-roll app POSTs one line-protocol point per roll to this listener.
+[[inputs.http_listener_v2]]
+  service_address = ":8186"
+  paths = ["/telegraf"]
+  data_format = "influx"
+
+[[outputs.opentelemetry]]
+  service_address = "https://<workspace-id>.zerobus.<region>.cloud.databricks.com/v1/metrics"
+  encoding_type = "protobuf"
+  timeout = "30s"
+  token = "@{zbauth:zbtoken}"
+  [outputs.opentelemetry.attributes]
+    "service.name" = "<service-name>"
+  [outputs.opentelemetry.headers]
+    x-databricks-zerobus-table-name = "<catalog>.<schema>.<table>"
