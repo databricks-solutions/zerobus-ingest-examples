@@ -1,3 +1,5 @@
 {"event_id":"test-good-1","timestamp":"2026-01-01T00:00:00Z","service":"dice-roller","severity":"INFO","message":"ada rolled a 3","player":"ada","result":3,"trace_id":"00000000000000000000000000000001","span_id":"0000000000000001"}
 {"timestamp":"2026-01-01T00:00:01Z","service":"dice-roller","severity":"INFO","message":"missing event_id","player":"grace","result":5}
+{"event_id":"test-malformed", this line is not JSON
+{"event_id":null,"timestamp":"2026-01-01T00:00:03Z","service":"dice-roller","severity":"INFO","message":"null event_id","player":"ken","result":2}
 {"event_id":"test-good-2","timestamp":"2026-01-01T00:00:02Z","service":"dice-roller","severity":"WARN","message":"linus rolled a six","player":"linus","result":6,"trace_id":"00000000000000000000000000000002","span_id":"0000000000000002"}
