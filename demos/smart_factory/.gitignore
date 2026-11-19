@@ -9,3 +9,6 @@ node_modules/
 *.egg-info/
 .DS_Store
 uv.lock
+.env.setup
+.generated/
+app.yaml

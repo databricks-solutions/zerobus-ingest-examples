@@ -26,66 +26,35 @@ A customer-facing demo showing how Databricks turns factory sensor data into act
 | **Hydraulic Press** | Pressure, Temperature, Cycle Count | Pressure surge, cycle slowdown |
 | **Conveyor Belt** | Belt Speed, Load Weight, Motor Current | Speed drop, overcurrent |
 
-## Demo Story (6 minutes)
-
-> **Pre-flight**: Start streaming + pipeline 30s before presenting. Confirm dashboard has data.
-
-### Act 1 — "This is your factory" (IoT Simulation tab)
-> "3 machines, IoT sensors streaming every 2 seconds, directly into Databricks. No Kafka."
-
-- Gauges are already updating, event feed scrolling
-- Point out "Streaming" and "Pipeline Running" in the header
-- Expand ZeroBus info panel — highlight ≤200ms ack, 10 GB/s, Joby Aviation quote
-
-### Act 2 — "Here's the pipeline" (SDP in Databricks UI)
-> "Declarative SQL. Streaming and batch in one pipeline. Fully serverless."
-
-- Switch to Databricks workspace, open the SDP pipeline DAG
-- Show Bronze → Silver → Gold with streaming indicators
-- Click into Silver SQL — "anomaly detection is a SQL JOIN. Any SQL developer can own this."
-- Three SDP benefits: declarative, streaming+batch unified, serverless
-
-### Act 3 — "Let's break something" (Inject a fault)
-> "Watch what happens when the CNC Mill starts overheating."
-
-- Click **Fault: CNC Mill** — watch temperature climb, gauges go red
-- Event feed lights up with warnings and criticals
-- Switch to **Operations Dashboard** — health scores dropping, anomaly log filling
-
-### Act 4 — "Everything is governed" (Unity Catalog)
-> "Every table governed. Full lineage from raw sensor event to dashboard."
-
-- Open Catalog Explorer, click Gold table → show lineage graph
-- "One command to deploy. No Kafka. No ML infrastructure. Just push and go."
-
-### Act 5 — "Clear the fault" (Resolution)
-- Click **Clear All** — readings normalize, health scores recover
-
-See [docs/demo-script.md](docs/demo-script.md) for the full script with talking points and objection handling.
-
 ## Quick Start
 
 ### Prerequisites
 - [Databricks CLI](https://docs.databricks.com/dev-tools/cli/index.html) v0.288+ installed
 - CLI profile configured for your target workspace
 - Node.js 18+ and npm installed
+- Python 3 installed
 - An existing Unity Catalog catalog with cloud storage configured
+- An existing SQL warehouse, unless a warehouse ID is supplied explicitly
 
 ### One-command setup
 ```bash
 git clone <repo-url>
-cd smartfactory-demo
-./setup.sh <databricks-cli-profile> <catalog_name>
+cd zerobus-ingest-examples/demos/smart_factory
+./setup.sh <databricks-cli-profile> <catalog_name> [schema_name] [warehouse_id]
 ```
 
+`schema_name` defaults to `smartfactory`. When `warehouse_id` is omitted, the
+script selects the first SQL warehouse available to the configured profile.
+
 This script handles everything:
-1. Finds and starts a SQL warehouse
-2. Creates the `smartfactory` schema and landing table
+1. Uses the requested SQL warehouse, or finds and starts one when omitted
+2. Creates the selected schema and landing table
 3. Builds the React frontend
-4. Deploys all resources via DABs (app, pipeline, dashboard)
-5. Detects the app service principal and grants all permissions
-6. Starts the app and deploys code
-7. Sets the SDP pipeline to continuous mode
+4. Renders workspace-specific app, pipeline, and dashboard configuration
+5. Deploys all resources via DABs (app, pipeline, dashboard)
+6. Detects the app service principal and grants all permissions
+7. Starts the app and deploys its code
+8. Configures the SDP pipeline and updates the app with its ID
 
 ### After setup
 1. Open the app URL printed by the script
@@ -99,11 +68,18 @@ This script handles everything:
 > The simulator and pipeline start paused by default — you must manually start them each demo session.
 
 ### Redeploying after code changes
+
+Run these commands from `demos/smart_factory` after completing the initial setup,
+which creates `app.yaml` and `.generated/`:
+
 ```bash
 cd frontend && npm run build && cd ..
-databricks bundle deploy -t dev
-databricks apps deploy smartfactory-app \
-  --source-code-path /Workspace/Users/<you>/.bundle/smartfactory-demo/dev/files
+databricks bundle deploy -t dev -p <databricks-cli-profile> \
+  --var="catalog_name=<catalog>" \
+  --var="schema_name=<schema>" \
+  --var="warehouse_id=<warehouse-id>"
+databricks -p <databricks-cli-profile> apps deploy smartfactory-app \
+  --source-code-path /Workspace/Users/<workspace-user>/.bundle/smartfactory-demo/dev/files
 ```
 
 ## Project Structure
@@ -112,14 +88,17 @@ databricks apps deploy smartfactory-app \
 smartfactory-demo/
 ├── setup.sh                  # One-command setup script
 ├── databricks.yml            # DABs bundle (app + pipeline + dashboard)
-├── app.yaml                  # Databricks App config
-├── app.py                    # FastAPI backend (WebSocket + REST + pipeline control)
-├── simulator.py              # 3-machine IoT sensor simulator with fault injection
-├── zerobus_client.py         # ZeroBus SDK wrapper with SQL INSERT fallback
+├── app.yaml.template         # Template rendered by setup.sh
+├── src/
+│   ├── app.py                # FastAPI backend (WebSocket + REST + pipeline control)
+│   ├── simulator.py          # 3-machine IoT sensor simulator with fault injection
+│   └── zerobus_client.py     # ZeroBus SDK wrapper with SQL INSERT fallback
 ├── pipeline/
-│   ├── bronze.sql            # Validated ingestion (streaming table)
+│   ├── bronze.sql.template   # Ingestion template rendered by setup.sh
 │   ├── silver.sql            # Anomaly scoring via threshold JOIN (streaming table)
 │   └── gold.sql              # Health KPIs + anomaly timeline (materialized views)
+├── dashboards/
+│   └── smartfactory.lvdash.json.template
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx           # Tabbed layout (IoT Simulation + Dashboard)
@@ -134,8 +113,7 @@ smartfactory-demo/
 │   │   └── hooks/
 │   │       └── useWebSocket  # Auto-reconnecting WebSocket hook
 │   └── dist/                 # Pre-built frontend (deployed with app)
-├── dashboard.lvdash.json     # Lakeview dashboard definition
-└── CLAUDE.md                 # Development notes and known issues
+└── .generated/               # Workspace-specific files created by setup.sh
 ```
 
 ## Tech Stack
