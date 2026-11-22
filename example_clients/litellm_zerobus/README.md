@@ -46,8 +46,8 @@ The whole thing runs with `docker compose up`.
 - **How it works:** the callback queues a row for each finished request, success or failure. Every
   `flush_interval` seconds (5 in this example), or sooner when the queue reaches `batch_size`
   rows, it posts the queue as a JSON batch to the Zerobus Ingest REST endpoint. Logging runs
-  separately from the model call, so a logging error never changes the response.
-- **Delivery:** the queue is in memory, and a retried batch can write a row more than once.
+  separately from the model call, so a logging error doesn't change the response.
+- **Delivery:** the queue is in memory, and a retried batch can write a row more than one time.
   Deduplicate on `litellm_call_id` when you count requests.
 
 ## Prerequisites
@@ -125,16 +125,16 @@ docker compose down
 The callback reads its settings from `zerobus_params` in `gateway/config.yaml`, which takes
 each value from `.env` with `os.environ/`:
 
-| Setting | Variable | Description |
+| Setting | Variable in `.env` | Description |
 |---|---|---|
 | `workspace_url` | `ZEROBUS_WORKSPACE_URL` | Workspace URL. The callback gets its token from `<workspace-url>/oidc/v1/token`. |
 | `server_endpoint` | `ZEROBUS_SERVER_ENDPOINT` | Zerobus Ingest endpoint, with `https://`. |
 | `client_id` | `ZEROBUS_CLIENT_ID` | Service principal application ID. |
 | `client_secret` | `ZEROBUS_CLIENT_SECRET` | Service principal OAuth secret. |
 | `table_name` | `ZEROBUS_TABLE_NAME` | Target table, `<catalog>.<schema>.<table>`. |
-| `batch_size` | — | Queue size that triggers an early send (100). It isn't a maximum batch size. |
-| `flush_interval` | — | Seconds between sends (5 here; LiteLLM's default is 10). |
-| `turn_off_message_logging` | — | `true` writes `redacted-by-litellm` in place of the prompt and response text. |
+| `batch_size` | (none) | Queue size that triggers an early send (100). It isn't a maximum batch size. |
+| `flush_interval` | (none) | Seconds between sends: 5 here. LiteLLM's default is 10. |
+| `turn_off_message_logging` | (none) | `true` writes `redacted-by-litellm` in place of the prompt and response text. |
 
 `gateway/Dockerfile` pins `LITELLM_VERSION` (1.109.1). The callback is in LiteLLM 1.105.0 and
 above. If you change the version, run `./scripts/create_table.sh` again and update the table to
