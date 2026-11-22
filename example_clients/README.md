@@ -56,6 +56,7 @@ If your contribution is a **complete, narrative-driven showcase** with data gene
 | [`vector_zerobus`](vector_zerobus/) | Logs, metrics and traces via Vector | Python (FastAPI, OpenTelemetry), Vector config (YAML, VRL), Docker Compose | A dice-roll app sends OpenTelemetry logs, metrics and traces to Vector, which writes each signal to its own Delta table through Vector's native `databricks_zerobus` sink, with a dead-letter route for bad events |
 | [`filament_zerobus`](filament_zerobus/) | PostgreSQL (full snapshots and CDC) via Filament | Docker Compose, SQL, Bash | Replicates PostgreSQL tables into Delta tables with Filament's native `databrickszerobus` sink, running Filament's server, control plane and `-libc` worker with PostgreSQL and NATS JetStream |
 | [`telegraf_zerobus`](telegraf_zerobus/) | Host and app metrics via Telegraf | Python (FastAPI), Telegraf config (TOML) | A dice-roll app sends metrics through Telegraf's OpenTelemetry output to Zerobus Ingest's OTLP metrics endpoint, which writes them to a Delta table, with no message bus in between |
+| [`litellm_zerobus`](litellm_zerobus/) | LLM Gateway request logs via LiteLLM | Python (FastAPI), LiteLLM config (YAML), Docker Compose | A dice-roll app calls the LiteLLM Gateway, whose built-in `zerobus` callback logs each request, success or failure, to a Delta table through Zerobus Ingest |
 
 ## Planned Clients
 

@@ -1,0 +1,32 @@
+services:
+  # LiteLLM Gateway with the zerobus logging callback.
+  litellm:
+    build: ./gateway
+    env_file: .env
+    ports: ["4000:4000"]
+
+  # The app: GET /rolldice rolls a die and asks the gateway to narrate it.
+  dice-app:
+    build: ./app
+    environment:
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY}
+    ports: ["8000:8000"]
+    depends_on: [litellm]
+
+  # Rolls the dice every 2 seconds as different players. Every tenth call uses the failing model.
+  traffic:
+    image: curlimages/curl:8.10.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        i=0
+        while true; do
+          for p in ada grace linus; do
+            i=$$((i + 1)); f=false
+            if [ $$((i % 10)) -eq 0 ]; then f=true; fi
+            curl -s "http://dice-app:8000/rolldice?player=$$p&fail=$$f" >/dev/null
+            sleep 2
+          done
+        done
+    depends_on: [dice-app]

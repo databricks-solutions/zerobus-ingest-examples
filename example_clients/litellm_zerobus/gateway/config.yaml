@@ -1,0 +1,29 @@
+# Two demo models that answer locally with mock_response, so the demo needs no LLM provider key.
+# Swap them for your real models. The zerobus callback logs every model the same way.
+model_list:
+  - model_name: dice-narrator
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: not-used-mock
+      mock_response: "The die tumbles across the table and lands on a lucky number."
+  - model_name: dice-broken
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: not-used-mock
+      mock_response: "litellm.RateLimitError"
+
+litellm_settings:
+  callbacks: ["zerobus"]
+  zerobus_params:
+    workspace_url: os.environ/ZEROBUS_WORKSPACE_URL
+    server_endpoint: os.environ/ZEROBUS_SERVER_ENDPOINT
+    client_id: os.environ/ZEROBUS_CLIENT_ID
+    client_secret: os.environ/ZEROBUS_CLIENT_SECRET
+    table_name: os.environ/ZEROBUS_TABLE_NAME
+    batch_size: 100
+    flush_interval: 5
+    # Set to true to write "redacted-by-litellm" in place of prompt and response text.
+    turn_off_message_logging: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
