@@ -23,6 +23,29 @@ A Kafka Connect sink connector that writes Kafka records to Delta tables through
 
 Required: `zerobus.endpoint`, `zerobus.workspace.url`, `zerobus.client.id`, `zerobus.client.secret`, and a target (`zerobus.table`, `zerobus.topic2table.map`, or `zerobus.tables`). Put secrets in `.env` and refer to them as `${env:NAME}`.
 
+### Topic selection
+
+The connector reads the topics you list in the standard Kafka Connect sink settings. Set exactly one of the two keys:
+
+| Key | Example | Meaning |
+|---|---|---|
+| `topics` | `"orders"` or `"orders,payments,refunds"` | One topic, or a comma-separated list. |
+| `topics.regex` | `"events\\..*"` | A Java regular expression. Every topic whose full name matches is read, including topics created after the connector starts. Kafka picks up a new topic on the consumer's next metadata refresh (`metadata.max.age.ms`, 5 minutes by default), with no restart. |
+
+One connector can read any number of topics. Each record is then written to a table by the routing rules in the next section:
+
+- One table for every topic: set `zerobus.table`.
+- One table per topic: set `zerobus.topic2table.map`, for example `events\\.(.*)=><catalog>.<schema>.events_$1` sends `events.orders` to `events_orders`. A topic that matches no rule goes to `zerobus.table`.
+- Several tables from one topic: use the fan-out keys (`zerobus.tables` with a route field).
+
+For example, to read every topic that starts with `events.` into one table per topic. Patterns are shown as they appear in the JSON config, where a backslash is written `\\`:
+
+```json
+"topics.regex": "events\\..*",
+"zerobus.topic2table.map": "events\\.(.*)=><catalog>.<schema>.events_$1",
+"zerobus.table.auto.create": "true"
+```
+
 ### Routing
 
 | Key | Default | Meaning |
@@ -30,6 +53,7 @@ Required: `zerobus.endpoint`, `zerobus.workspace.url`, `zerobus.client.id`, `zer
 | `zerobus.table` | none | Target table for every topic (or the default when no topic-map rule matches). |
 | `zerobus.topic2table.map` | empty | `topic-regex=>catalog.schema.table_$1` rules, separated by `;`. The first full match wins. |
 | `zerobus.tables` | empty | Static fan-out: a record is written to each listed table whose `route.regex` matches the route field. |
+| `zerobus.tables.<catalog.schema.table>.route.regex` | none | Per-table pattern for static fan-out: a record goes to that table when its route field matches. |
 | `zerobus.tables.route.field` | none | The field whose value is matched (or names the table when dynamic). |
 | `zerobus.tables.dynamic.enabled` | false | The route field's value is the table name. |
 | `zerobus.tables.dynamic.namespace` | none | The `catalog.schema` that dynamic routing may write to. |
