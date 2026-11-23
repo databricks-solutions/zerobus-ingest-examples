@@ -1,0 +1,42 @@
+# Kafka (single node, KRaft) and one Kafka Connect worker with the Zerobus sink on its plugin path.
+# Start with:  docker compose up -d   (from this compose folder, after scripts/build.sh and cp ../.env.example ../.env)
+# Credentials come from ../.env (env_file). Nothing secret is written in this file.
+name: zerobus-kafka-connect-demo
+
+services:
+  kafka:
+    image: apache/kafka:3.9.0
+    ports:
+      - "9092:9092"
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_NUM_PARTITIONS: "3"
+      KAFKA_HEAP_OPTS: "-Xmx1g -Xms512m"
+
+  connect:
+    image: apache/kafka:3.9.0
+    depends_on:
+      - kafka
+    ports:
+      - "8083:8083"
+    env_file:
+      - ../.env
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx2g -Xms512m"
+      # The Arrow format needs this JVM option on JDK 9 and later (Arrow memory).
+      KAFKA_OPTS: "--add-opens=java.base/java.nio=ALL-UNNAMED"
+    entrypoint: ["/opt/kafka/bin/connect-distributed.sh", "/config/connect-distributed.properties"]
+    volumes:
+      - ./connect-distributed.properties:/config/connect-distributed.properties:ro
+      - ./plugins:/opt/connect/plugins:ro
