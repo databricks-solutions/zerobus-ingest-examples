@@ -1,0 +1,24 @@
+{
+  "name": "clickstream-fan-out",
+  "config": {
+    "connector.class": "com.databricks.zerobus.kafka.connect.ZerobusSinkConnector",
+    "zerobus.endpoint": "${env:ZEROBUS_SERVER_ENDPOINT}",
+    "zerobus.workspace.url": "${env:DATABRICKS_WORKSPACE_URL}",
+    "zerobus.client.id": "${env:DATABRICKS_CLIENT_ID}",
+    "zerobus.client.secret": "${env:DATABRICKS_CLIENT_SECRET}",
+    "zerobus.kafka.bootstrap.servers": "kafka:9092",
+    "zerobus.table.service.warehouse.id": "${env:SQL_WAREHOUSE_ID}",
+    "zerobus.table.service.mode": "sharded",
+    "tasks.max": "3",
+    "topics": "clickstream",
+    "zerobus.tables": "<catalog>.<schema>.clickstream_clicks,<catalog>.<schema>.clickstream_purchases,<catalog>.<schema>.clickstream_all",
+    "zerobus.tables.route.field": "event_type",
+    "zerobus.tables.<catalog>.<schema>.clickstream_clicks.route.regex": "click",
+    "zerobus.tables.<catalog>.<schema>.clickstream_purchases.route.regex": "purchase",
+    "zerobus.tables.<catalog>.<schema>.clickstream_all.route.regex": "click|view|purchase",
+    "zerobus.mode": "typed",
+    "zerobus.table.auto.create": "true",
+    "zerobus.control.topic": "clickstream-control",
+    "zerobus.metadata.enabled": "true"
+  }
+}

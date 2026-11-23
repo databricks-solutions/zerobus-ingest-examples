@@ -1,0 +1,22 @@
+{
+  "name": "tenant-dynamic",
+  "config": {
+    "connector.class": "com.databricks.zerobus.kafka.connect.ZerobusSinkConnector",
+    "zerobus.endpoint": "${env:ZEROBUS_SERVER_ENDPOINT}",
+    "zerobus.workspace.url": "${env:DATABRICKS_WORKSPACE_URL}",
+    "zerobus.client.id": "${env:DATABRICKS_CLIENT_ID}",
+    "zerobus.client.secret": "${env:DATABRICKS_CLIENT_SECRET}",
+    "zerobus.kafka.bootstrap.servers": "kafka:9092",
+    "zerobus.table.service.warehouse.id": "${env:SQL_WAREHOUSE_ID}",
+    "zerobus.table.service.mode": "sharded",
+    "tasks.max": "3",
+    "topics": "tenant_events",
+    "zerobus.tables.dynamic.enabled": "true",
+    "zerobus.tables.dynamic.namespace": "<catalog>.<schema>",
+    "zerobus.tables.route.field": "target_table",
+    "zerobus.mode": "typed",
+    "zerobus.table.auto.create": "true",
+    "zerobus.control.topic": "tenant-control",
+    "zerobus.metadata.enabled": "true"
+  }
+}

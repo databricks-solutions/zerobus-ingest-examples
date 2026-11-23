@@ -7,9 +7,9 @@ A Kafka Connect sink connector that writes Kafka records to Delta tables through
 - One connector runs many tasks. Each task owns some topic partitions and one stream per target table.
 - Each record is routed to a table (a static fan-out, a regex on the topic, or a dynamic route field), mapped to columns (typed or envelope mode), and sent on a Zerobus stream (JSON or Arrow).
 - Schema changes are additive. A task requests them. One table-service owner runs one `ALTER TABLE ... ADD COLUMNS` per table, and the waiting tasks resume.
-- Offsets are committed only after the server acknowledges a record, or after the record is in the dead-letter table. Delivery is at-least-once (see Known limitations).
+- Offsets are committed only after the server acknowledges a record, or after the record is in the dead-letter table. Each record can be delivered more than one time (see Known limitations).
 - A record the server or the mapping rejects can go to an optional dead-letter table, with its Kafka metadata.
-- Every row carries a `_kafka` struct with the Kafka metadata, including `_kafka.timestamp` (the Kafka record timestamp).
+- By default, every row carries a `_kafka` struct with the Kafka metadata, including `_kafka.timestamp` (the Kafka record timestamp).
 
 ## Prerequisites
 
@@ -103,12 +103,12 @@ Set the worker's `offset.flush.interval.ms` to 500 for low commit latency (the v
 
 ## Dead-letter rows and the Zerobus record size limit
 
-**Warning.** Dead-letter rows count against Zerobus's per-message size limit, the same as data rows. The documented limit is 10 MB (10,485,760 bytes). In testing, the server enforced 10,420,224 bytes. A record that is too large is rejected by the server with `Ingest payload too large`.
+Dead-letter rows count against Zerobus's per-message size limit, the same as data rows. The documented limit is 10 MB (10,485,760 bytes). In testing, the server enforced 10,420,224 bytes. A record that is too large is rejected by the server with `Ingest payload too large`.
 
 What the connector does for a record that is too large:
 
 - The dead-letter row is kept under 9 MiB. If the row with its value would be larger, the value is left out and `value_truncated` is set to true. `value_original_bytes` gives the size the value had.
-- With the default `zerobus.dlq.oversize.metadata.only=true`, the row keeps the Kafka metadata (when `zerobus.dlq.include.metadata` is on), so the record is still accounted for: in the target table, or as metadata in the dead-letter table.
+- With the default `zerobus.dlq.oversize.metadata.only=true`, the row keeps the Kafka metadata (when `zerobus.dlq.include.metadata` is on), so the record is still accounted for, as a metadata-only row in the dead-letter table.
 - With `zerobus.dlq.oversize.metadata.only=false`, the record is not written at all. It is logged as an error with its coordinates, and its offset still commits. Use this only where losing the trace of an oversize record is acceptable.
 
 To keep dead-letter rows small: leave `zerobus.dlq.include.key=false` (the default), and keep large payloads out of the record (for example, store the payload in object storage and send a reference).
@@ -138,57 +138,63 @@ Dead-letter table, all options on (`scripts/create_table.sql`):
 
 Auto-create builds only the columns that the options enable. An existing dead-letter table must have every column that the options need. If one is missing, the connector fails at start and names the missing columns. The connector doesn't alter a dead-letter table.
 
+## Example configurations
+
+The `examples/` folder has one connector configuration for each common setup: one topic to one table with auto-create, fan-in from many topics into one envelope table, static and dynamic fan-out, and a dead-letter table. Each example was tested end to end. See [examples/README.md](examples/README.md) for when to use each one and the settings it depends on.
+
 ## Quick start
 
 Run these from the folder that contains this README. You need Docker and a Databricks workspace.
 
-1. **Fill in the environment.**
+1. Fill in the environment.
 
-   ```
+   ```bash
    cp .env.example .env
    ```
 
    Edit `.env`: the workspace URL and endpoint, the service principal's client ID and secret, the warehouse ID, and (for the check in step 7) `DATABRICKS_HOST` and a token. `.env` is git-ignored.
 
-2. **Create the tables.** Replace the placeholders in `scripts/create_table.sql` (`<catalog>`, `<schema>`, `<service-principal-client-id>`) and run it in your SQL warehouse.
+2. Create the tables. Replace the placeholders in `scripts/create_table.sql` (`<catalog>`, `<schema>`, `<service-principal-client-id>`) and run it in your SQL warehouse.
 
-3. **Build the connector.** This runs the unit tests and stages the jar for compose.
+3. Build the connector. This runs the unit tests and stages the jar for compose.
 
-   ```
+   ```bash
    scripts/build.sh
    ```
 
-4. **Start Kafka and Connect.**
+4. Start Kafka and Connect.
 
-   ```
+   ```bash
    cd compose && docker compose up -d && cd ..
    ```
 
    Wait until `curl -s http://localhost:8083/` returns the worker's version.
 
-5. **Register the connector.** Copy the example, replace its placeholders (`<catalog>`, `<schema>`), and register it.
+5. Register the connector. Copy the example, replace its placeholders (`<catalog>`, `<schema>`), and register it.
 
-   ```
+   ```bash
    cp config.example.json config.json
    scripts/register.sh
    ```
 
    `register.sh` refuses a file that still has placeholders. Check the connector with `curl -s http://localhost:8083/connectors/zerobus-demo/status`. The connector and its task should be `RUNNING`.
 
-6. **Produce sample records.** This creates the topic `demo_events` (three partitions) and sends 200 records.
+6. Produce sample records. This creates the topic `demo_events` (three partitions) and sends 200 records.
 
-   ```
+   ```bash
    scripts/produce.sh demo_events 200 3
    ```
 
    Each record is JSON with a schema (`id`, `name`, `amount`). The connector writes them to `demo_events`.
 
-7. **Query the result and run the check.** Query a few rows, then run the at-least-once check, which reads the end offsets from Kafka and checks every partition and offset in the table or the dead-letter table.
+7. Query the result and run the check. Query a few rows, then run the coverage check, which reads the end offsets from Kafka and checks every partition and offset in the table or the dead-letter table.
 
-   ```
-   # in your SQL editor
+   ```sql
+   -- in your SQL editor
    SELECT id, name, amount, _kafka.partition, _kafka.offset, _kafka.timestamp FROM <catalog>.<schema>.demo_events ORDER BY id LIMIT 5;
+   ```
 
+   ```bash
    # from this folder (DATABRICKS_HOST, SQL_WAREHOUSE_ID and a token or client credentials are read from .env)
    set -a && . ./.env && set +a
    python3 tests/at_least_once_check.py --topic demo_events \
@@ -198,20 +204,20 @@ Run these from the folder that contains this README. You need Docker and a Datab
 
    The check prints the expected coordinates, the rows in each table, missing, duplicates, and `RESULT at-least-once: PASS` when nothing is missing.
 
-8. **Stop.** `cd compose && docker compose down`.
+8. Stop. `cd compose && docker compose down`.
 
 ## How to extend
 
-- **A new option.** Add a `define` and a getter in `ZerobusSinkConfig`, a validation rule if it depends on another option, and unit tests for every valid combination (see `TableColumnsTest` for the dead-letter matrix).
-- **A new dead-letter column.** Add it to `TableColumns.DEAD_LETTER` and to `deadLetter(cfg)` under the option that enables it. The start check picks it up.
-- **A new failure rule.** Handle it in the task's failure path (`attribute`, `failTarget`, `reject`), so that the record is delivered, dead-lettered, or skipped with a log line. The delivery tracker must see every record finish.
-- **Tests.** `tests/run_unit_tests.sh` runs the unit suite in a Maven container. `tests/at_least_once_check.py` is the generic end-to-end coverage check.
+- **A new option**: Add a `define` and a getter in `ZerobusSinkConfig`, a validation rule if it depends on another option, and unit tests for every valid combination (see `TableColumnsTest` for the dead-letter matrix).
+- **A new dead-letter column**: Add it to `TableColumns.DEAD_LETTER` and to `TableColumns.deadLetter(cfg)` under the option that enables it. The start check picks it up.
+- **A new failure rule**: Handle it in the task's failure path (`attribute`, `failTarget`, `reject`), so that the record is delivered, dead-lettered, or skipped with a log line. The delivery tracker must see every record finish.
+- **Tests**: `tests/run_unit_tests.sh` runs the unit suite in a Maven container. `tests/at_least_once_check.py` is the generic end-to-end coverage check.
 
 ## Known limitations
 
-- **(a) JSON converter coerces mismatched values to 0.** Kafka's JSON converter (`connect-json`) turns a text value into `0` for an int32 field before the connector sees the record. A record that declares an integer field but carries "abc" is stored as `0`, with no error. The connector cannot see the original text. Use a strict converter (Avro or Protobuf with a schema registry), or schemaless JSON with the rescue column (`zerobus.rescue.column.enabled=true`), where extra and mismatched fields are kept on the server.
-- **(b) Delivery is at-least-once.** After a restart or a rebalance, records after the last committed offset are sent again, so the table can hold duplicates. To count each record one time, deduplicate on `_kafka.partition` and `_kafka.offset` (the dead-letter table has `partition` and `offset` too).
-- **(c) The rescue column is JSON only.** Arrow is used only for typed tables without a rescue column. `zerobus.format=auto` falls back to JSON when a rescue column is set.
+- (a) JSON converter coerces mismatched values to 0. Kafka's JSON converter (`connect-json`) turns a text value into `0` for an int32 field before the connector sees the record. A record that declares an integer field but carries "abc" is stored as `0`, with no error. The connector cannot see the original text. Use a strict converter (Avro or Protobuf with a schema registry), or schemaless JSON with the rescue column (`zerobus.rescue.column.enabled=true`), where extra and mismatched fields are kept on the server.
+- (b) A record can be delivered more than one time. After a restart or a rebalance, records after the last committed offset are sent again, so the table can hold duplicates. To count each record one time, deduplicate on `_kafka.partition` and `_kafka.offset` (the dead-letter table has `partition` and `offset` too).
+- (c) The rescue column is JSON only. Arrow is used only for typed tables without a rescue column. `zerobus.format=auto` falls back to JSON when a rescue column is set.
 
 ## Architecture
 
@@ -241,7 +247,7 @@ The worker commits a partition's offset only past records that are acknowledged 
 
 ## Build and test
 
-```
+```bash
 scripts/build.sh          # unit tests, then stage the jar under compose/plugins
 tests/run_unit_tests.sh   # unit tests only, with the count
 ```

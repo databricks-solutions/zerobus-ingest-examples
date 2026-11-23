@@ -1,0 +1,23 @@
+{
+  "name": "ledger-dead-letter",
+  "config": {
+    "connector.class": "com.databricks.zerobus.kafka.connect.ZerobusSinkConnector",
+    "zerobus.endpoint": "${env:ZEROBUS_SERVER_ENDPOINT}",
+    "zerobus.workspace.url": "${env:DATABRICKS_WORKSPACE_URL}",
+    "zerobus.client.id": "${env:DATABRICKS_CLIENT_ID}",
+    "zerobus.client.secret": "${env:DATABRICKS_CLIENT_SECRET}",
+    "zerobus.kafka.bootstrap.servers": "kafka:9092",
+    "zerobus.table.service.warehouse.id": "${env:SQL_WAREHOUSE_ID}",
+    "zerobus.table.service.mode": "sharded",
+    "tasks.max": "3",
+    "topics": "ledger",
+    "zerobus.table": "<catalog>.<schema>.ledger",
+    "zerobus.mode": "typed",
+    "zerobus.table.auto.create": "false",
+    "zerobus.metadata.enabled": "true",
+    "zerobus.dlq.table": "<catalog>.<schema>.ledger_dlq",
+    "zerobus.dlq.include.metadata": "true",
+    "zerobus.dlq.include.key": "true",
+    "zerobus.dlq.oversize.metadata.only": "true"
+  }
+}
