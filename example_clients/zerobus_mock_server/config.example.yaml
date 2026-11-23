@@ -1,0 +1,49 @@
+# Zerobus mock server configuration. Placeholders only; no real workspace, client or secret.
+# Relative paths are resolved from this file's directory.
+
+server:
+  host: 127.0.0.1              # bind address for both listeners (0.0.0.0 inside a container)
+  rest_port: 8443              # HTTPS: OAuth token, REST insert, /_mock control API
+  grpc_port: 50051             # TLS gRPC: EphemeralStream
+  public_hosts:                # host names clients use; they go into the server certificate
+    - localhost                # the SDK takes the first DNS label of the endpoint as the workspace id
+  workspace_id: null           # set to enforce the workspace id in token requests (null = any)
+
+tls:
+  cert_dir: ./data/tls         # local CA (ca.pem) and server certificate are generated here
+
+auth:
+  token_ttl_seconds: 3600      # the docs say tokens last one hour
+  require_known_clients: false # true = only the clients below get tokens
+  clients:
+    - client_id: <client-id>
+      client_secret: <client-secret>   # only checked when require_known_clients is true
+
+limits:
+  max_record_bytes: 10485760   # 10 MB, the documented record size maximum
+  message_header_bytes: 19     # documented header overhead inside that limit
+
+fault_seed: 42                 # seeds probability triggers, so a run is repeatable
+event_log: ./data/events.jsonl # every injected fault as a JSON line (omit to keep events in memory only)
+
+tables:
+  - name: main.default.air_quality
+    columns:
+      - {name: device_name, type: STRING, nullable: false}
+      - {name: temp, type: INT, nullable: true}
+      - {name: humidity, type: LONG, nullable: true}
+
+  - name: main.default.sensor_events
+    rescue_column: rescue      # unknown fields and mismatched values go here as JSON
+    columns:
+      - {name: device_name, type: STRING, nullable: false}
+      - {name: temp, type: INT, nullable: true}
+      - {name: rescue, type: VARIANT, nullable: true}
+
+# Faults that are active from startup. The control API (POST /_mock/faults) adds more.
+faults: []
+# - type: http_error
+#   protocol: rest
+#   table: main.default.air_quality
+#   trigger: {mode: once}
+#   params: {status: 503}
