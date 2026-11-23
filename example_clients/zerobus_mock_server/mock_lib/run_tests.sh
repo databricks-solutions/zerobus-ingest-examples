@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Runs the unit tests of every mock library, one language after another, and prints a pass/fail table.
+# Runs the contract check first (check_contract_version.py), then the unit tests of every mock library,
+# one language after another, and prints a pass/fail table.
 #
 #   ./run_tests.sh                 all languages
 #   ./run_tests.sh java go         only the named ones (python java typescript go rust)
@@ -75,7 +76,17 @@ run_lang() {
   fi
 }
 
+# Step 1: the contract check. Standard library only, so it runs on this host with python3 -I.
 overall=0
+echo "== contract"
+if python3 -I "$HERE/check_contract_version.py" >"$LOGS/contract.log" 2>&1; then
+  RESULT[contract]=PASS
+else
+  RESULT[contract]=FAIL
+  overall=1
+fi
+cat "$LOGS/contract.log"
+
 for lang in $WANTED; do
   run_lang "$lang"
   [ "${RESULT[$lang]}" = "PASS" ] || overall=1
@@ -84,6 +95,7 @@ done
 echo
 printf '%-12s %-14s %-8s %s\n' "language" "result" "tests" "log"
 printf '%-12s %-14s %-8s %s\n' "--------" "------" "-----" "---"
+printf '%-12s %-14s %-8s %s\n' "contract" "${RESULT[contract]}" "-" "$LOGS/contract.log"
 for lang in $WANTED; do
   printf '%-12s %-14s %-8s %s\n' "$lang" "${RESULT[$lang]:-SKIP}" "${TESTS[$lang]:-?}" "$LOGS/$lang.log"
 done

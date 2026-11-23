@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "contract_version": 1,
   "description": "Caller-visible outcome of each named scenario. Shared by the mock server and every mock library. The 'where' field says which call raises; 'message' is a substring of the SDK error; null means no error.",
   "scenarios": {
     "auth-failure":             {"where": "create", "message": "invalid_client",  "retried_by_sdk": false},

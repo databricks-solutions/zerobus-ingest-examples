@@ -1,6 +1,7 @@
-// Package zerobusmock is an in-process fake of the Zerobus Go SDK's ZerobusSdk and ZerobusStream, for
-// unit tests. Nothing is sent anywhere. The real SDK (module github.com/databricks/zerobus-sdk/go) needs
-// cgo and a native library, so this package defines ZerobusError itself, with the SDK's fields and methods.
+// Package zerobusmock is an UNOFFICIAL in-process fake of the Zerobus Go SDK's ZerobusSdk and ZerobusStream,
+// for unit tests. Not affiliated with Databricks. Nothing is sent anywhere. The real SDK
+// (module github.com/databricks/zerobus-sdk/go) needs cgo and a native library, so this package defines
+// ZerobusError itself, with the SDK's fields and methods.
 //
 //	mock := zerobusmock.NewFakeMock()
 //	sdk := zerobusmock.NewFakeZerobusSdk(mock)
@@ -14,6 +15,9 @@ import (
 	"fmt"
 	"sync"
 )
+
+// ContractVersion is the scenarios.json contract_version this copy embeds.
+const ContractVersion = 1
 
 const tokenExpired = "token-expired"
 

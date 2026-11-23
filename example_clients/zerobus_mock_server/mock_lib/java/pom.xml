@@ -7,10 +7,14 @@
   <artifactId>zerobus-mock-lib</artifactId>
   <version>0.1.0</version>
   <packaging>jar</packaging>
+  <!-- UNOFFICIAL: a community test fake. Not affiliated with Databricks. -->
+  <name>Unofficial Zerobus Mock (Java)</name>
+  <description>UNOFFICIAL in-process fake of the Zerobus Ingest Java SDK for unit tests. Not affiliated with Databricks.</description>
 
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <zerobus.mock.contract_version>1</zerobus.mock.contract_version>
   </properties>
 
   <dependencies>

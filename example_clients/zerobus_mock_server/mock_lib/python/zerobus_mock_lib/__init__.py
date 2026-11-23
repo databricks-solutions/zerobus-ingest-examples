@@ -1,5 +1,7 @@
 """An in-process fake of the Zerobus Python SDK's entry point and stream, for unit tests.
 
+UNOFFICIAL: a community test fake. Not affiliated with Databricks.
+
     from zerobus_mock_lib import FakeZerobusSdk, FakeMock
     mock = FakeMock()
     sdk = FakeZerobusSdk(mock)
@@ -14,6 +16,9 @@ outcome in scenarios.json, not the SDK's retry loop.
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+
+__version__ = "0.1.0"
+CONTRACT_VERSION = 1  # the scenarios.json contract_version this copy embeds
 
 try:  # the real exception type, when the SDK is installed; otherwise a local one with the same name
     from zerobus.sdk.shared import ZerobusException  # type: ignore

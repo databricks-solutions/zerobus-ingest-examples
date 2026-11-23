@@ -2,7 +2,8 @@
   "name": "zerobus-mock-lib",
   "version": "0.1.0",
   "private": true,
-  "description": "In-process fake of the Zerobus TypeScript SDK for unit tests (no network).",
+  "description": "UNOFFICIAL in-process fake of the Zerobus Ingest TypeScript SDK for unit tests (no network). Not affiliated with Databricks.",
+  "contract_version": 1,
   "type": "module",
   "scripts": {
     "test": "node --test test/fake.test.ts",

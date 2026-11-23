@@ -1,6 +1,10 @@
-# Zerobus Ingest mock server
+# Zerobus Ingest mock server (unofficial)
+
+> Unofficial: this mock is a community testing tool, not a Databricks product, and it isn't supported by Databricks. It doesn't reproduce every Zerobus Ingest behavior. Test against a real workspace before production.
 
 A test double for the Zerobus Ingest REST and gRPC write APIs, for integration tests of client code. It is not the Zerobus service. Where the public docs are silent, the mock states its assumption (see "Differences from the real service").
+
+Testing guide: how to choose between the mock library, the in-process pytest plugin and Docker Compose, with examples and a scenario cookbook, is in [TESTING.md](TESTING.md).
 
 ## Two ways to use it
 
@@ -31,7 +35,9 @@ export PIP_INDEX_URL=https://pypi.org/simple
 docker compose --profile test build tests && docker compose --profile test run --rm tests
 
 # the server, for a client on the same host
-docker compose up zerobus-mock          # REST on 127.0.0.1:8443, gRPC on :50051
+docker compose up -d zerobus-mock      # REST on 127.0.0.1:8443, gRPC on :50051
+# under Compose the CA is in the mock-data volume, so copy it out first
+docker compose exec -T zerobus-mock cat /config/data/tls/ca.pem > ca.pem
 curl -s --cacert ca.pem https://localhost:8443/_mock/health
 ```
 
@@ -53,6 +59,8 @@ One YAML file. Relative paths resolve from the file's directory. `config.example
 
 Types are the base Delta names: `STRING`, `INT`, `SHORT`, `BYTE`, `LONG`, `FLOAT`, `DOUBLE`, `BOOLEAN`, `BINARY`, `DECIMAL(p,s)`, `DATE`, `TIMESTAMP`, `TIMESTAMP_NTZ`, `VARIANT`, `ARRAY<T>`, `MAP<K,V>`, `STRUCT<...>`. Nested parts are not checked.
 
+<a id="control-api"></a>
+
 ## Control API
 
 Plain HTTP on the REST listener, for test code only. Bind to `127.0.0.1`. The API has no authentication.
@@ -70,14 +78,16 @@ Plain HTTP on the REST listener, for test code only. Bind to `127.0.0.1`. The AP
 
 `MockControl` (`zerobus_mock_server.control`) wraps these calls. `expire_token` and `fail_next` take the same arguments.
 
+<a id="scenarios"></a>
+
 ## Scenarios
 
 What the caller sees is the Python SDK's behavior, measured with SDK 1.11.0. "Retryable" means the SDK's own recovery handles it. The text in `scenarios.json` (`message`) is what the SDK error must contain.
 
 | Scenario | Fires at | Caller sees | SDK test |
 |---|---|---|---|
-| `auth-failure` | token endpoint: 401 `invalid_client` | `create_stream` raises at once | yes |
-| `table-not-found` | create and insert: NOT_FOUND / 404 | `create_stream` raises at once | yes (gRPC) |
+| `auth-failure` | token endpoint: 401 `invalid_client` | `create_stream` raises immediately | yes |
+| `table-not-found` | create and insert: NOT_FOUND / 404 | `create_stream` raises immediately | yes (gRPC) |
 | `schema-mismatch` | record: a field the table lacks (4044) | `ingest` or `flush` raises `does not fit`; earlier records stored | yes |
 | `record-too-large` | record: over the size limit (OUT_OF_RANGE) | terminal error from `ingest` or `flush` | yes |
 | `server-unavailable` | token, insert, create, in-stream: UNAVAILABLE / 503 | retried by the SDK, then raises; held until cleared | yes |
@@ -92,17 +102,19 @@ What the caller sees is the Python SDK's behavior, measured with SDK 1.11.0. "Re
 
 ```python
 # conftest.py
-from zerobus_mock_server.pytest_plugin import zerobus_mock, zerobus_mock_server  # noqa: F401
+from zerobus_mock_server.pytest_plugin import zerobus_mock, zerobus_mock_config, zerobus_mock_server  # noqa: F401
 
 # test_ingest.py
 def test_retries_after_abort(zerobus_mock, zerobus_mock_server):
-    zerobus_mock.fail_next("stream-abort-retryable", after=4)   # the 5th submission is aborted, once
+    zerobus_mock.fail_next("stream-abort-retryable", after=4)   # the 5th submission is aborted, one time
     stream = make_sdk_stream(zerobus_mock_server)               # your code under test
     ingest_and_flush(stream, records)
     assert zerobus_mock.coverage("main.default.events", expected=10, key="device_name")["missing"] == 0
 ```
 
 `zerobus_mock` resets the server before each test. Override the `zerobus_mock_config` fixture to change the tables or the record limit.
+
+<a id="differences-from-the-real-service"></a>
 
 ## Differences from the real service
 
@@ -112,6 +124,17 @@ def test_retries_after_abort(zerobus_mock, zerobus_mock_server):
 - The control API has no authentication. Bind it to 127.0.0.1.
 - Assumptions where the docs are silent: offsets run 0, 1, 2 per stream; REST inserts are atomic; a breaking schema change (a non-nullable column added while a stream is open) sends that stream's rows to an in-memory fallback bucket; any non-empty client credentials are accepted.
 - Records are checked by name and basic type only. Nested values, decimal precision, timestamp zones, Avro logical types beyond date, timestamp and decimal, and protobuf maps are not checked.
+
+<a id="versioning-and-sharing"></a>
+
+## Versioning and sharing
+
+There are two version numbers, and they move separately:
+
+- **Package version** (`0.1.0` in this folder). The server, the Python library and the other libraries each declare it in their manifest or package comment (`__version__`, `pom.xml`, `package.json`, `Cargo.toml`, the Go package comment). It follows SemVer. A change to a package's API or behavior bumps it, and `0.x` minors may change the API. Release notes are in [CHANGELOG.md](CHANGELOG.md).
+- **Contract version** (`contract_version` in `scenarios.json`, which is `1`). It counts the caller-visible outcome of each scenario. A change to any outcome bumps it, and each package bumps its minor version in the same release. Each package declares the contract it embeds. `mock_lib/check_contract_version.py` fails when a declaration differs from `scenarios.json`, and `mock_lib/run_tests.sh` runs it first.
+
+The mock is shared only as source in this repo. It has no container image and no package registry release.
 
 ## Layout
 

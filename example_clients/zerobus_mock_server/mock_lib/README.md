@@ -1,4 +1,6 @@
-# Zerobus mock libraries
+# Zerobus mock libraries (unofficial)
+
+> Unofficial: this mock is a community testing tool, not a Databricks product, and it isn't supported by Databricks. It doesn't reproduce every Zerobus Ingest behavior. Test against a real workspace before production.
 
 In-process fakes of the Zerobus SDK entry point and stream, for unit tests of client code. No network and no server. Each library has the SDK's method names, the same controls as the server (`failNext`/`fail_next`, `expireToken`, `setScenario`, `clearScenario`, `reset`), recorded ingests, and the caller-visible outcomes in `scenarios.json`.
 
@@ -30,6 +32,8 @@ The script prints a table with the result and the test count per language, and w
 
 Rust builds offline from a vendored copy of `rust/Cargo.lock` (crates fetched from static.crates.io and checked against the lock), because some hosts cannot reach `index.crates.io`.
 
+<a id="the-controls-all-languages"></a>
+
 ## The controls (all languages)
 
 | Control | Meaning |
@@ -43,6 +47,8 @@ Rust builds offline from a vendored copy of `rust/Cargo.lock` (crates fetched fr
 Unknown scenario names are rejected: Python raises `ValueError`, Java `IllegalArgumentException`, TypeScript `Error`, and Go and Rust return an error. `token-expired` cannot be held: use `expireToken`.
 
 Each library keeps a copy of the scenario table and a test checks it against `scenarios.json`, so a change to the contract fails the suite until the copy is updated.
+
+<a id="usage-in-tests"></a>
 
 ## Usage in tests
 

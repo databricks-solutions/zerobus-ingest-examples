@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.70"
 publish = false
-description = "In-process fake of the Zerobus Rust SDK for unit tests (no network)."
+description = "UNOFFICIAL in-process fake of the Zerobus Ingest Rust SDK for unit tests (no network). Not affiliated with Databricks."
+
+[package.metadata.zerobus_mock]
+contract_version = 1
 
 # The library has no runtime dependencies. The tests use tokio (the SDK's methods are async) and serde_json
 # (to read ../scenarios.json).
