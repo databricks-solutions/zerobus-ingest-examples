@@ -21,7 +21,7 @@ Each row is a situation. ✅ means the path fits. ⚠️ means it fits with a li
 | Testing a Kafka Connect, Vector or other connector end to end | ❌ The fake lives in your test process, not in the connector's process. | ❌ The plugin serves only the Python test process. | ⚠️ Works if the connector can set a custom endpoint and trust a CA. Not tested in this repo. | ✅ The real service, with its real auth and behavior. |
 | CI without Docker | ✅ Needs only the language toolchain. | ✅ Needs Python, pytest and the SDK package. | ❌ Needs Docker on the runner. | ⚠️ Needs credentials and network access from CI. |
 | CI with Docker | ✅ `mock_lib/run_tests.sh` runs each language in Docker. | ✅ Runs in your Python test image. | ✅ Start the service beside your tests. | ⚠️ Same credential limits as above. |
-| A non-Python language | ⚠️ Java, TypeScript, Go and Rust only. | ❌ Python only. | ✅ Any client that can trust a CA and take an endpoint. The SDK matrix in `tests/sdk/` drives Java, Rust, Go, C++ and TypeScript clients this way. | ✅ |
+| A non-Python language | ⚠️ Java, TypeScript, Go, Rust, C++ and .NET only. | ❌ Python only. | ✅ Any client that can trust a CA and take an endpoint. The SDK matrix in `tests/sdk/` drives Java, Rust, Go, C++, .NET and TypeScript clients this way. | ✅ |
 | Testing a real SDK upgrade | ❌ Fakes the SDK's surface, so it can't show a change inside the SDK. | ✅ Runs the SDK pinned in `requirements-test.txt`. | ✅ Runs the SDK pinned in each client image. | ✅ The final check against the real service. |
 | Checking that no rows are missing | ⚠️ `stored` keeps the resend duplicates. There is no coverage helper, so compare the lists yourself. | ✅ `coverage()` reports missing and duplicate keys. | ✅ `GET /_mock/tables/<table>/coverage`. | ⚠️ Query the table yourself. Slower, and you have to control the keys. |
 | Schema evolution | ⚠️ Models `schema-mismatch` and the fallback route. No table schema. | ✅ Checks record fields by name and basic type. Nested fields aren't checked. | ✅ Same server, driven over the control API. | ✅ The final check. The mock's breaking-change rule is an assumption. |
@@ -30,7 +30,7 @@ Each row is a situation. ✅ means the path fits. ⚠️ means it fits with a li
 
 Rules of thumb:
 
-- Start with the mock library when your test is in Java, TypeScript, Go, Rust or Python and checks how your code handles a failure. It is the fastest path and needs no network.
+- Start with the mock library when your test is in Java, TypeScript, Go, Rust, C++, .NET or Python and checks how your code handles a failure. It is the fastest path and needs no network.
 - Start with the in-process pytest plugin when your test is Python and should run the real SDK against the mock.
 - Use Docker Compose when the client isn't Python, or when a connector runs as its own process.
 - Before production, run the same path against a real workspace. Throughput and exact error text need a real workspace.
@@ -103,7 +103,7 @@ class RetryLogicTest {
 }
 ```
 
-For TypeScript, Go and Rust, see [Usage in tests](mock_lib/README.md#usage-in-tests) in the library README. The matching tests are `mock_lib/typescript/test/fake.test.ts`, `mock_lib/go/zerobusmock_test.go` and `mock_lib/rust/tests/fake.rs`. The [controls table](mock_lib/README.md#the-controls-all-languages) lists the same controls in each language.
+For TypeScript, Go, Rust, C++ and .NET, see [Usage in tests](mock_lib/README.md#usage-in-tests) in the library README. The matching tests are `mock_lib/typescript/test/fake.test.ts`, `mock_lib/go/zerobusmock_test.go`, `mock_lib/rust/tests/fake.rs`, `mock_lib/cpp/tests/zerobus_mock_test.cpp` and `mock_lib/dotnet/Zerobus.Mock.Tests/ZerobusMockTests.cs`. The [controls table](mock_lib/README.md#the-controls-all-languages) lists the same controls in each language.
 
 ### (b) Mock server in process with the pytest plugin
 

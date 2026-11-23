@@ -8,7 +8,7 @@ Standard library only, so it runs without installing anything:
     python3 -I mock_lib/check_contract_version.py            # the server folder is the parent of mock_lib/
 
 It checks that the two scenarios.json copies are byte-identical, that the server reads its copy's
-contract_version, and that each library declares the same contract_version. Exit 0 when all match, 1 otherwise.
+contract_version, and that each library (Python, Java, TypeScript, Go, Rust, C++, .NET) declares the same contract_version. Exit 0 when all match, 1 otherwise.
 """
 
 import json
@@ -27,6 +27,8 @@ DECLARATIONS = [
     ("rust lib", "mock_lib/rust/Cargo.toml", r"^contract_version\s*=\s*(\d+)", re.M),
     ("java lib", "mock_lib/java/pom.xml", r"<zerobus\.mock\.contract_version>\s*(\d+)\s*<", 0),
     ("go lib", "mock_lib/go/zerobusmock.go", r"^const ContractVersion\s*=\s*(\d+)", re.M),
+    ("cpp lib", "mock_lib/cpp/include/zerobusmock/zerobus_mock.hpp", r"^inline constexpr int kContractVersion\s*=\s*(\d+);", re.M),
+    ("dotnet lib", "mock_lib/dotnet/Zerobus.Mock/ZerobusMock.cs", r"^\s*public const int ContractVersion\s*=\s*(\d+);", re.M),
 ]
 
 

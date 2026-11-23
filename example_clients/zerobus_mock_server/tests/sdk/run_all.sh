@@ -12,7 +12,7 @@
 #
 # Environment:
 #   ZEROBUS_SDK_SRC  the zerobus-sdk monorepo checkout (sparse: rust, go, purego, cpp,
-#                    typescript, java, python). Required.
+#                    dotnet, typescript, java, python). Required.
 #   ZB_RUN           scratch directory for the CA, results and build caches. Default:
 #                    /tmp/zb-sdk-matrix. Nothing outside it is written.
 #   PIP_INDEX_URL, NPM_CONFIG_REGISTRY, GOPROXY, MAVEN_MIRROR  package proxies used at image build.

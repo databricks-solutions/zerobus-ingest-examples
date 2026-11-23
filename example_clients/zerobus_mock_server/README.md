@@ -9,7 +9,7 @@ Testing guide: how to choose between the mock library, the in-process pytest plu
 ## Two ways to use it
 
 - **Mock server, for integration tests** (this folder): a local process that serves the Zerobus REST and gRPC APIs, so a real SDK or connector can connect to it.
-- **Mock libraries, for unit tests** ([`mock_lib/`](mock_lib/)): in-process fakes of the SDK for Python, Java, TypeScript, Go and Rust. They need no network or server.
+- **Mock libraries, for unit tests** ([`mock_lib/`](mock_lib/)): in-process fakes of the SDK for Python, Java, TypeScript, Go (cgo and pure-Go), Rust, C++ and .NET. They need no network or server.
 
 Both share the same eleven failure scenarios and the same controls, so a test can make the next call fail, expire the token, or hold a failure until it's cleared, with no waiting.
 
@@ -23,7 +23,7 @@ Both share the same eleven failure scenarios and the same controls, so a test ca
 
 The scenario outcomes are shared with the mock libraries: `src/zerobus_mock_server/scenarios.json` is a copy of [`mock_lib/scenarios.json`](mock_lib/scenarios.json), and the server refuses to start if its mechanics and that file disagree.
 
-Tested with the Python SDK `databricks-zerobus-ingest-sdk` 1.11.0. The language matrix (`tests/sdk/`) runs the other SDKs against the same server.
+Tested with the Python SDK `databricks-zerobus-ingest-sdk` 1.11.0. The language matrix (`tests/sdk/`) runs the other SDKs against the same server, including the C++ and .NET clients.
 
 ## Running it
 
@@ -131,7 +131,7 @@ def test_retries_after_abort(zerobus_mock, zerobus_mock_server):
 
 There are two version numbers, and they move separately:
 
-- **Package version** (`0.1.0` in this folder). The server, the Python library and the other libraries each declare it in their manifest or package comment (`__version__`, `pom.xml`, `package.json`, `Cargo.toml`, the Go package comment). It follows SemVer. A change to a package's API or behavior bumps it, and `0.x` minors may change the API. Release notes are in [CHANGELOG.md](CHANGELOG.md).
+- **Package version** (`0.1.0` in this folder). The server, the Python library and the other libraries each declare it in their manifest or package comment (`__version__`, `pom.xml`, `package.json`, `Cargo.toml`, the Go package comment, `CMakeLists.txt` for C++, the `.csproj` for .NET). It follows SemVer. A change to a package's API or behavior bumps it, and `0.x` minors may change the API. Release notes are in [CHANGELOG.md](CHANGELOG.md).
 - **Contract version** (`contract_version` in `scenarios.json`, which is `1`). It counts the caller-visible outcome of each scenario. A change to any outcome bumps it, and each package bumps its minor version in the same release. Each package declares the contract it embeds. `mock_lib/check_contract_version.py` fails when a declaration differs from `scenarios.json`, and `mock_lib/run_tests.sh` runs it first.
 
 The mock is shared only as source in this repo. It has no container image and no package registry release.
