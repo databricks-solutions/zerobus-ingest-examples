@@ -1,0 +1,13 @@
+[package]
+name = "zerobus_mock_lib"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+publish = false
+description = "In-process fake of the Zerobus Rust SDK for unit tests (no network)."
+
+# The library has no runtime dependencies. The tests use tokio (the SDK's methods are async) and serde_json
+# (to read ../scenarios.json).
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+serde_json = "1"

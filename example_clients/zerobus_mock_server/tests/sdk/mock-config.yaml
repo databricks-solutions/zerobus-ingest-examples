@@ -6,12 +6,9 @@ server:
   public_hosts: [localhost]
 tls:
   cert_dir: /run/tls
-event_log: /run/events.jsonl
-fault_seed: 42
 tables:
   - name: main.default.sdk_matrix
     columns:
       - {name: device_name, type: STRING, nullable: false}
       - {name: temp, type: INT}
       - {name: humidity, type: LONG}
-faults: []

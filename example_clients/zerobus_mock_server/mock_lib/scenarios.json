@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "description": "Caller-visible outcome of each named scenario. Shared by the mock server and every mock library. The 'where' field says which call raises; 'message' is a substring of the SDK error; null means no error.",
+  "scenarios": {
+    "auth-failure":             {"where": "create", "message": "invalid_client",  "retried_by_sdk": false},
+    "table-not-found":          {"where": "create", "message": "cannot be found", "retried_by_sdk": false},
+    "schema-mismatch":          {"where": "ingest", "message": "does not fit",    "retried_by_sdk": false, "earlier_records_stored": true},
+    "record-too-large":         {"where": "ingest", "message": "maximum message size", "retried_by_sdk": false},
+    "server-unavailable":       {"where": "create", "message": "UNAVAILABLE",     "retried_by_sdk": true},
+    "stream-abort-retryable":   {"where": null,     "message": null,              "retried_by_sdk": true, "duplicates_possible": true},
+    "stream-abort-fatal":       {"where": "ingest", "message": "terminal stream error", "retried_by_sdk": false, "earlier_records_stored": true},
+    "graceful-close":           {"where": null,     "message": null,              "retried_by_sdk": true},
+    "no-acks":                  {"where": "flush",  "message": "timed out",       "retried_by_sdk": false},
+    "schema-change-while-open": {"where": null,     "message": null,              "retried_by_sdk": false, "rows_go_to": "fallback"},
+    "token-expired":            {"where": "ingest", "message": "expired",         "retried_by_sdk": false, "note": "at create the SDK refreshes the token and succeeds"}
+  }
+}

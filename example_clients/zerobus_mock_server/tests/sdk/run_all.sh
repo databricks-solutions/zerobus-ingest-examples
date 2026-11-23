@@ -29,10 +29,11 @@ MOCK_IMAGE=zerobus-mock-server:test
 TABLE=main.default.sdk_matrix
 N=20
 FORMATS="json proto arrow avro"
-SCENARIOS="normal abort token401 mismatch"
+SCENARIOS="${ZB_SCENARIOS:-normal abort token401 mismatch}"  # ZB_SCENARIOS=normal runs ingest only
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.org/simple}"
 NPM_CONFIG_REGISTRY="${NPM_CONFIG_REGISTRY:-https://registry.npmjs.org}"
 GOPROXY="${GOPROXY:-https://proxy.golang.org}"
+MAVEN_MIRROR="${MAVEN_MIRROR:-${MVNW_REPOURL:+${MVNW_REPOURL%/}/maven2}}"  # else MVNW_REPOURL/maven2, as mock_lib/run_tests.sh
 MAVEN_MIRROR="${MAVEN_MIRROR:-https://repo.maven.apache.org/maven2}"
 
 mkdir -p "$RUN/res" "$RUN/tls" "$RUN/cache"
@@ -108,8 +109,8 @@ run_cell() { # lang format -> sets CELL["lang/fmt"] to PASS or FAIL; prints per-
   for sc in $SCENARIOS; do
     api -X POST "$MOCK_URL/_mock/reset" -d "{\"tables\": [\"$TABLE\"]}" >/dev/null
     case "$sc" in
-      abort)    api -X POST "$MOCK_URL/_mock/faults" -d "{\"type\": \"stream_abort\", \"protocol\": \"grpc\", \"table\": \"$TABLE\", \"trigger\": {\"mode\": \"after\", \"after\": 2, \"times\": 1}, \"params\": {\"retryable\": true, \"persist_unacked\": true}}" >/dev/null ;;
-      token401) api -X POST "$MOCK_URL/_mock/faults" -d "{\"type\": \"token_invalid_client\", \"table\": \"$TABLE\"}" >/dev/null ;;
+      abort)    api -X POST "$MOCK_URL/_mock/fail-next" -d "{\"scenario\": \"stream-abort-retryable\", \"after\": 2, \"table\": \"$TABLE\"}" >/dev/null ;;
+      token401) api -X POST "$MOCK_URL/_mock/fail-next" -d "{\"scenario\": \"auth-failure\", \"table\": \"$TABLE\"}" >/dev/null ;;
     esac
     local res="$RUN/res/$lang-$fmt-$sc.out"
     : >"$res"

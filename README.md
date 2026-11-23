@@ -30,7 +30,7 @@ In this repo, you will find examples and demos of Zerobus Ingest, a push-based A
 * [Filament Zerobus](./example_clients/filament_zerobus/) - Replicate PostgreSQL tables into Delta tables with Filament's native Zerobus sink, as full copies and as CDC change history, from one Docker Compose stack
 * [Telegraf Zerobus](./example_clients/telegraf_zerobus/) - Send Telegraf host metrics and an app's dice-roll metrics to Delta tables through its OpenTelemetry output and Zerobus Ingest's OTLP endpoint, with no message bus in between
 * [GenAI Agent Zerobus](./example_clients/genai_agent_zerobus/) - Ship a Python GenAI agent's OpenTelemetry traces, logs, and metrics into Delta tables via Zerobus, then view them as agentic traces in MLflow (LangChain example + drop-in exporter)
-* [Zerobus Mock Server](./example_clients/zerobus_mock_server/) - A local test double for Zerobus Ingest (REST and gRPC; JSON, protobuf, Arrow Flight and Avro) with in-memory tables you can read back and injectable failures, tested with the Python, Java, TypeScript, Rust, Go and C++ SDKs
+* [Zerobus Mock Server](./example_clients/zerobus_mock_server/) - A local test double for Zerobus Ingest: a mock server (REST and gRPC; JSON, protobuf, Arrow Flight and Avro) for integration tests, and in-process mock libraries for Python, Java, TypeScript, Go and Rust unit tests, sharing eleven deterministic failure scenarios
 
 *Coming soon* - MQTT and more.
 

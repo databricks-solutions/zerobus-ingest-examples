@@ -1,14 +1,13 @@
 """Verdict for one language x format x scenario cell of the SDK matrix.
 
 Runs on the host with the standard library only. It reads the client's result line and
-the mock's control API (rows, stats, injected faults) and prints PASS or FAIL with the
-reason. Exit code 0 is PASS.
+the mock's rows (control API) and prints PASS or FAIL with the reason. Exit code 0 is PASS.
 
 Scenarios (N records per run; record 5 carries an extra "region" field in "mismatch"):
 
   normal    the SDK reports success; N distinct rows are stored.
   abort     a retryable mid-stream abort is injected after two submissions. The SDK
-            reconnects and resends; all N distinct rows are stored and the fault fired.
+            reconnects and resends; all N distinct rows are stored.
   token401  the token endpoint answers 401 invalid_client. The SDK reports an error that
             names it, and nothing is stored.
   mismatch  a field that is not a column of the table (4044). JSON rejects record 5, so
@@ -44,11 +43,9 @@ def verdict(args) -> tuple[bool, str]:
         result = {"ok": False, "error": f"client result unreadable: {exc}"}
 
     table = urllib.parse.quote(args.table, safe="")
-    stats = _get(args.mock, ctx, f"/_mock/tables/{table}/stats?key=device_name")
-    events = _get(args.mock, ctx, "/_mock/events")["events"]
-    fired = {e["fault_type"] for e in events}
-    rows = stats["rows"]
-    distinct = stats.get("distinct_keys", 0)
+    stored = _get(args.mock, ctx, f"/_mock/tables/{table}/rows?limit=10000")["rows"]
+    rows = len(stored)
+    distinct = len({r["values"].get("device_name") for r in stored})
     error = str(result.get("error") or "")
     ok = bool(result.get("ok"))
     n = args.n
@@ -57,10 +54,10 @@ def verdict(args) -> tuple[bool, str]:
         good = ok and rows == n and distinct == n
         why = f"ok={ok} rows={rows} distinct={distinct} (want {n})"
     elif args.scenario == "abort":
-        good = ok and distinct == n and rows >= n and "stream_abort" in fired
-        why = f"ok={ok} rows={rows} distinct={distinct} fired={sorted(fired)}"
+        good = ok and distinct == n and rows >= n
+        why = f"ok={ok} rows={rows} distinct={distinct}"
     elif args.scenario == "token401":
-        good = (not ok) and ("invalid_client" in error or "401" in error) and rows == 0 and "token_invalid_client" in fired
+        good = (not ok) and ("invalid_client" in error or "401" in error) and rows == 0
         why = f"ok={ok} rows={rows} error={error[:160]!r}"
     elif args.scenario == "mismatch":
         want_rows = 5 if args.format == "json" else 0

@@ -1,30 +1,37 @@
 """Helpers for driving the real Python SDK against the mock."""
 
 import threading
-from typing import Iterable, Optional
 
 from zerobus.sdk.shared import TableProperties
 from zerobus.sdk.sync import ZerobusSdk
+from zerobus_mock_server.scenarios import CONTRACT
+
+from helpers import CLIENT_ID, CLIENT_SECRET
+
+
+def contract(name: str) -> str:
+    """The SDK-visible text of a scenario, from scenarios.json (the shared contract)."""
+    return CONTRACT[name]["message"]
 
 
 def sdk_for(mock) -> ZerobusSdk:
     return ZerobusSdk(mock.grpc_endpoint, mock.unity_catalog_url)
 
 
-def create(mock, table: str, descriptor: Optional[bytes] = None):
+def create(mock, table: str, descriptor=None, options=None):
     props = TableProperties(table, descriptor) if descriptor is not None else TableProperties(table)
-    return sdk_for(mock).create_stream("mock-client-id", "mock-client-secret", props)
+    args = (CLIENT_ID, CLIENT_SECRET, props) + ((options,) if options is not None else ())
+    return sdk_for(mock).create_stream(*args)
 
 
-def drive(stream, records: Iterable, *, close: bool = True):
-    """Ingest every record, flush, close. Returns the first exception raised, or None."""
+def drive(stream, records, *, close: bool = True):
+    """Ingests every record, flushes and closes. Returns the first exception raised, or None."""
     try:
         for rec in records:
             stream.ingest_record_offset(rec)
         stream.flush()
     except Exception as exc:  # noqa: BLE001 - the tests inspect the SDK's error
-        if close:
-            _quietly_close(stream)
+        _quietly_close(stream)
         return exc
     if close:
         try:
@@ -41,8 +48,17 @@ def _quietly_close(stream) -> None:
         pass
 
 
+def create_error(mock, table: str, descriptor=None, options=None):
+    """The exception that create_stream raises. Fails the test if it succeeds."""
+    try:
+        create(mock, table, descriptor=descriptor, options=options)
+    except Exception as exc:  # noqa: BLE001
+        return exc
+    raise AssertionError("create_stream should have failed")
+
+
 def run_in_thread(fn):
-    """Run ``fn`` on a thread and return (thread, box). ``box['exc']`` holds any exception."""
+    """Runs ``fn`` on a thread. Returns (thread, box); box['exc'] holds any exception."""
     box = {}
 
     def target():

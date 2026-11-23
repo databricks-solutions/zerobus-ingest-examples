@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Maven mirror for the image build. The URL comes from the MAVEN_MIRROR environment variable. -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <mirrors>
+    <mirror><id>zb-mock-mirror</id><mirrorOf>*</mirrorOf><url>${env.MAVEN_MIRROR}</url></mirror>
+  </mirrors>
+</settings>

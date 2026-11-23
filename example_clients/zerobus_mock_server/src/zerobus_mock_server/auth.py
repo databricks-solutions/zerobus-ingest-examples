@@ -1,133 +1,63 @@
-"""OAuth token issuing and checking for the mock.
-
-The token endpoint follows the shape in the Zerobus REST docs: client
-credentials (Basic auth or form fields), ``scope=all-apis``, a ``resource`` of
-``api://databricks/workspaces/<workspace-id>/zerobusDirectWriteApi``, and an
-``authorization_details`` JSON array that names one table. The mock checks
-that the table exists and that the privileges are SELECT and/or MODIFY. It
-doesn't check real grants: any client is treated as granted, unless a
-permission fault is injected.
-
-Tokens are opaque strings bound to one table and expire after
-``token_ttl_seconds`` (the docs say one hour).
-"""
+"""OAuth tokens: one table per token, checked on every authenticated call. Tokens expire by clock or by the expiry budget."""
 
 from __future__ import annotations
 
-import base64
-import binascii
 import json
-import re
 import secrets
-import threading
 import time
-from dataclasses import dataclass
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Dict, Iterable, Optional
 
-RESOURCE_RE = re.compile(r"^api://databricks/workspaces/([^/]+)/zerobusDirectWriteApi$")
-ALLOWED_TABLE_PRIVILEGES = {"SELECT", "MODIFY"}
+PRIVILEGES = {"SELECT", "MODIFY"}
 
 
-class TokenProblem(Exception):
-    """A token request is refused. ``status``/``error`` follow the OAuth error shape."""
-
-    def __init__(self, status: int, error: str, description: str):
-        super().__init__(description)
-        self.status = status
-        self.error = error
-        self.description = description
-
-
-@dataclass(frozen=True)
-class Grant:
-    client_id: str
-    table: str
-    workspace_id: str
-    expires_at: float
-
-
-def parse_basic(header: Optional[str]) -> Optional[Tuple[str, str]]:
-    if not header or not header.lower().startswith("basic "):
-        return None
-    try:
-        raw = base64.b64decode(header.split(" ", 1)[1].strip(), validate=True).decode("utf-8")
-    except (binascii.Error, UnicodeDecodeError, ValueError):
-        return None
-    if ":" not in raw:
-        return None
-    cid, secret = raw.split(":", 1)
-    return cid, secret
-
-
-def parse_authorization_details(raw: str, known_tables: Iterable[str]) -> str:
-    """Return the one table named by ``authorization_details``. Raises TokenProblem."""
-    known = set(known_tables)
-
-    def bad(msg: str) -> TokenProblem:
-        return TokenProblem(401, "invalid_authorization_details", msg)
-
+def table_from_details(raw: str, known: Iterable[str]) -> str:
+    """The one TABLE named by authorization_details. Raises ValueError with the reason."""
     try:
         entries = json.loads(raw)
     except (TypeError, ValueError):
-        raise bad("authorization_details is not JSON")
-    if not isinstance(entries, list) or not entries:
-        raise bad("authorization_details must be a non-empty JSON array")
-    tables = []
-    for entry in entries:
-        if not isinstance(entry, dict) or entry.get("type") != "unity_catalog_privileges":
-            raise bad("each authorization_details entry needs type unity_catalog_privileges")
-        object_type = entry.get("object_type")
-        path = entry.get("object_full_path")
-        privileges = entry.get("privileges")
-        if object_type not in ("CATALOG", "SCHEMA", "TABLE") or not isinstance(path, str):
-            raise bad("object_type must be CATALOG, SCHEMA or TABLE with an object_full_path")
-        if not isinstance(privileges, list) or not privileges:
-            raise bad("privileges must be a non-empty list")
-        if object_type == "TABLE":
-            extra = {str(p).upper() for p in privileges} - ALLOWED_TABLE_PRIVILEGES
-            if extra:
-                raise bad(
-                    "table privileges other than SELECT and MODIFY are not accepted: "
-                    + ", ".join(sorted(extra))
-                )
-            tables.append(path)
+        raise ValueError("authorization_details is not JSON")
+    if not isinstance(entries, list) or not entries or not all(isinstance(e, dict) for e in entries):
+        raise ValueError("authorization_details must be a non-empty JSON array of objects")
+    tables = [e.get("object_full_path") for e in entries if e.get("object_type") == "TABLE"]
+    privileges = [{str(p).upper() for p in e.get("privileges") or []} for e in entries if e.get("object_type") == "TABLE"]
     if len(tables) != 1:
-        raise bad("authorization_details must name exactly one TABLE")
-    table = tables[0]
-    if table not in known:
-        raise bad(f"table {table} is not known to the mock")
-    return table
+        raise ValueError("authorization_details must name exactly one TABLE")
+    if not privileges[0] or privileges[0] - PRIVILEGES:
+        raise ValueError("table privileges other than SELECT and MODIFY are not accepted")
+    if tables[0] not in set(known):
+        raise ValueError(f"table {tables[0]} is not known to the mock")
+    return tables[0]
+
+
+TTL_SECONDS = 3600  # the docs say tokens last one hour
 
 
 class TokenStore:
-    def __init__(self, ttl_seconds: int, now=time.time):
-        self.ttl = ttl_seconds
-        self._now = now
-        self._grants: Dict[str, Grant] = {}
-        self._lock = threading.Lock()
+    def __init__(self) -> None:
+        self._grants: Dict[str, tuple] = {}  # token -> (table, expires_at)
+        self._expire_budget = 0
 
-    def issue(self, client_id: str, table: str, workspace_id: str) -> Tuple[str, int]:
+    def issue(self, table: str) -> str:
         token = "mock_" + secrets.token_urlsafe(24)
-        with self._lock:
-            self._grants[token] = Grant(client_id, table, workspace_id, self._now() + self.ttl)
-        return token, self.ttl
+        self._grants[token] = (table, time.time() + TTL_SECONDS)
+        return token
+
+    def expire_next(self, count: int = 1) -> None:
+        """The next ``count`` checks of issued tokens find the token expired."""
+        self._expire_budget += count
 
     def check(self, token: Optional[str], table: str) -> Optional[str]:
-        """Return None when ``token`` may write ``table``; otherwise an error code.
-
-        ``UNAUTHENTICATED`` covers a missing, unknown or expired token.
-        ``PERMISSION_DENIED`` covers a token issued for a different table.
-        """
-        if not token:
+        """None when the token may write the table; else UNAUTHENTICATED or PERMISSION_DENIED."""
+        grant = self._grants.get(token or "")
+        if grant is None:
             return "UNAUTHENTICATED"
-        with self._lock:
-            grant = self._grants.get(token)
-        if grant is None or grant.expires_at <= self._now():
+        if self._expire_budget > 0:
+            self._expire_budget -= 1
             return "UNAUTHENTICATED"
-        if grant.table != table:
-            return "PERMISSION_DENIED"
-        return None
+        if grant[1] <= time.time():
+            return "UNAUTHENTICATED"
+        return None if grant[0] == table else "PERMISSION_DENIED"
 
     def clear(self) -> None:
-        with self._lock:
-            self._grants.clear()
+        self._grants = {}
+        self._expire_budget = 0
