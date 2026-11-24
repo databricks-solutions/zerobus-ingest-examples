@@ -31,6 +31,7 @@ In this repo, you will find examples and demos of Zerobus Ingest, a push-based A
 * [Telegraf Zerobus](./example_clients/telegraf_zerobus/) - Send Telegraf host metrics and an app's dice-roll metrics to Delta tables through its OpenTelemetry output and Zerobus Ingest's OTLP endpoint, with no message bus in between
 * [GenAI Agent Zerobus](./example_clients/genai_agent_zerobus/) - Ship a Python GenAI agent's OpenTelemetry traces, logs, and metrics into Delta tables via Zerobus, then view them as agentic traces in MLflow (LangChain example + drop-in exporter)
 * [Zerobus Mock Server](./example_clients/zerobus_mock_server/) - A local test double for Zerobus Ingest: a mock server (REST and gRPC; JSON, protobuf, Arrow Flight and Avro) for integration tests, and in-process mock libraries for Python, Java, TypeScript, Go, Rust, C++ and .NET unit tests, sharing eleven deterministic failure scenarios
+* [Node-RED MQTT Zerobus](./example_clients/mqtt_node_red_zerobus/) - Publish JSON records from a Node-RED flow to a Delta table through the Zerobus Ingest MQTT 5 endpoint, with a required rescue column for records that don't match the table and no message bus in between
 
 *Coming soon* - MQTT and more.
 
