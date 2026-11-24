@@ -11,6 +11,17 @@ A Kafka Connect sink connector that writes Kafka records to Delta tables through
 - A record the server or the mapping rejects can go to an optional dead-letter table, with its Kafka metadata.
 - By default, every row carries a `_kafka` struct with the Kafka metadata, including `_kafka.timestamp` (the Kafka record timestamp).
 
+```mermaid
+flowchart TD
+    K["Kafka topics"] --> W["Kafka Connect worker: tasks"]
+    W --> R["Routing: topic map, static or dynamic fan-out"]
+    R --> M["Record mapper: typed or envelope"]
+    M --> S["Zerobus Ingest stream: JSON or Arrow"]
+    S --> D[("Delta table")]
+    M -->|"rejected by mapping"| L[("Dead-letter table")]
+    S -->|"rejected by the server"| L
+```
+
 ## Prerequisites
 
 - Docker with Compose (for the local Kafka and Connect stack) and the ability to run Maven in a container (Java 17) for the build.
@@ -115,6 +126,8 @@ To keep dead-letter rows small: leave `zerobus.dlq.include.key=false` (the defau
 
 ## Schema
 
+### Typed mode
+
 Target table (the example in `scripts/create_table.sql`):
 
 | Column | Type | Source |
@@ -122,6 +135,32 @@ Target table (the example in `scripts/create_table.sql`):
 | `id`, `name`, `amount` | BIGINT, STRING, INT | The record's schema fields (typed mode). |
 | `_kafka` | STRUCT | `zerobus.metadata.enabled=true`. Fields: `cluster`, `topic`, `partition`, `offset`, `key`, `timestamp`. |
 | `_kafka.timestamp` | TIMESTAMP | The Kafka record timestamp (CreateTime or LogAppendTime, as the broker stores it). |
+
+### Envelope mode
+
+With `zerobus.mode=envelope`, the table has a fixed shape, and the connector never adds columns to it. With `zerobus.table.auto.create=true`, the connector creates this table. If you create it yourself, use these columns:
+
+```sql
+CREATE TABLE IF NOT EXISTS <catalog>.<schema>.<table> (
+  record_key STRING,
+  record_value VARIANT,
+  record_headers MAP<STRING, STRING>,  -- only with zerobus.envelope.headers.enabled=true (default)
+  record_timestamp TIMESTAMP,
+  _kafka STRUCT<cluster: STRING, topic: STRING, partition: INT, offset: BIGINT, key: STRING, timestamp: TIMESTAMP>  -- only with zerobus.metadata.enabled=true (default); fields as in zerobus.metadata.fields
+);
+```
+
+| Column | Type | Written as |
+|---|---|---|
+| `record_key` | STRING | The record key as text (base64 for a byte key). Null when the record has no key. |
+| `record_value` | VARIANT | The record value as JSON text. Null for a tombstone (a null value). |
+| `record_headers` | MAP<STRING, STRING> | The record headers. Off when `zerobus.envelope.headers.enabled=false`. |
+| `record_timestamp` | TIMESTAMP | The Kafka record timestamp. Null when the record has none. |
+| `_kafka` | STRUCT | The Kafka metadata. Off when `zerobus.metadata.enabled=false`. |
+
+Choose envelope when the shape of the payload varies or is not known in advance, when many topics write to one table, or when the producer does not send schemas. Fields are read from `record_value` in the query. Choose typed when each field should be a typed column that you can query directly. Typed tables can add new fields as columns (`zerobus.schema.evolution.enabled=true`). A field whose type differs from its column fails the record, unless the rescue column is on.
+
+### Dead-letter table
 
 Dead-letter table, all options on (`scripts/create_table.sql`):
 
@@ -222,28 +261,34 @@ Run these from the folder that contains this README. You need Docker and a Datab
 ## Architecture
 
 ```mermaid
-flowchart LR
-    K["Kafka topics"] --> W["Connect worker (distributed mode)"]
-    subgraph Worker["Connect worker: one connector, N tasks"]
-        T["ZerobusSinkTask (per partition set)"]
-        M["Record mapper: typed or envelope"]
-        R["Table router: static, regex, dynamic"]
-        Q["Per-table queue per partition"]
-        A["Delivery tracker: watermark per partition"]
-        T --> M --> R --> Q --> A
-    end
-    W --> T
-    Q -->|"JSON or Arrow stream"| Z["Zerobus Ingest"]
-    Z --> D[("Delta tables")]
-    Q -->|"rejected rows"| DLQ[("Dead-letter table")]
-    T <-->|"schema requests"| C["Control topic"]
-    C <--> TS["Table service (sharded)"]
-    TS -->|"DESCRIBE, CREATE, ALTER"| SQL["SQL warehouse"]
-    SQL --> D
-    A -->|"committed offsets"| W
+flowchart TD
+    K["Kafka topics"] --> T["Connect tasks: a queue per table and partition"]
+    T -->|"1. table or column missing: request"| C["Control topic, keyed by table"]
+    C -->|"2. read by the task that owns the shard"| O["Owner task, one of the tasks: table service"]
+    O -->|"3. DESCRIBE, CREATE, one ALTER ADD COLUMNS"| W["SQL warehouse"]
+    W --> D[("Delta table")]
+    O -->|"4. SCHEMA_CHANGED: live columns and version"| C
+    C -->|"5. broadcast: every task reads it"| T
+    T -->|"records, once the columns exist"| Z["Zerobus Ingest stream"]
+    Z --> D
+    T -->|"rejected records"| L[("Dead-letter table")]
 ```
 
 The worker commits a partition's offset only past records that are acknowledged or dead-lettered. The table service owns DDL, so each schema change runs one time per table.
+
+### Control topic
+
+The control topic (`zerobus.control.topic`, default `zerobus-connect-control`) is used only when schema evolution or auto-create is on. Create it before the connector starts, with at least as many partitions as tasks. Every message is keyed by table name, so all messages for one table go to one partition, and so to one owner.
+
+**What is written.** Any task writes requests: `SNAPSHOT_REQUEST` (send the live schema of this table), `CHANGE_REQUEST` (add these columns), and `CREATE_REQUEST` (create this table with these columns). The owner writes `SCHEMA_CHANGED` after it handles a request. It carries the table's live columns and its Delta version.
+
+**Who reads it.** Each task has two readers. The shard reader is a member of a consumer group per connector, so Kafka gives each task some of the partitions. A task handles the requests for the tables on its partitions, and it is the only task that runs DDL for them. The broadcast reader is not in a group. It reads every partition from the end of the topic, so every task sees every request and every `SCHEMA_CHANGED`. Because the broadcast reader starts at the end of the topic, each task asks for a snapshot of its tables at start instead of relying on older messages.
+
+**How the owner handles them.** The owner groups a batch by table, so several requests for one table become one plan, and many requests for the same column cost one `ALTER TABLE`. For each table, it reads the live schema first. It creates the table if it is missing and a create was asked, then adds only the missing columns. A column that exists with another type is logged and left alone. "Already exists" counts as success, so a replayed batch does not add a column twice. Then it publishes `SCHEMA_CHANGED`. A transient SQL error is retried a few times with backoff. If a step still fails, nothing is published, and the requesters send again after their backoff. The owner commits the control offsets only after the batch is handled, so if it stops first, the next owner reads the batch again.
+
+**What the other tasks do while one waits.** The task that holds the record keeps it in the queue for that table on that partition. The partition is not paused, so records for other tables and other partitions keep flowing. The other tasks see the same request on the broadcast reader, so they do not send a duplicate. A repeat goes out only after a backoff: 5 seconds at first, growing, and capped at `zerobus.schema.request.backoff.max.ms` (30 seconds by default). The wait ends when a `SCHEMA_CHANGED` shows the columns, and the queue sends. The offset of the partition does not move past a waiting record, because the record is not yet acknowledged. If the wait lasts longer than `zerobus.schema.change.max.wait.ms` (30 seconds by default), the record fails. If a queue holds `zerobus.schema.change.max.buffered.records` records (10,000 by default), its partition is paused until the queue drains.
+
+**Rebalances.** If the owner stops, its control partitions move to another task after `zerobus.control.session.timeout.ms` (10 seconds by default). The new owner reads from the last committed control offset. When the Connect group rebalances, a task drops the unsent records of the partitions it loses, and the new owner replays them from the committed offset. A record can therefore be delivered more than one time (see Known limitations).
 
 ## Build and test
 
