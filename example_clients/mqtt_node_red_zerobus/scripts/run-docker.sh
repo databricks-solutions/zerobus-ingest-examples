@@ -6,6 +6,10 @@
 set -eu
 set -a; . ./config.env; set +a
 mkdir -p data
+# The nodered/node-red image runs Node-RED as UID 1000, which must own data/ on a Linux host.
+if [ "$(uname)" = "Linux" ] && [ "$(ls -ldn data | awk '{print $3}')" != "1000" ]; then
+  echo "warning: data/ is not owned by UID 1000, the user the nodered/node-red image runs as. Fix with: sudo chown -R 1000:1000 data" >&2
+fi
 cp node-red/flows.json node-red/settings.js data/
 docker run -d --name zerobus-node-red \
   -e PORT -e DATABRICKS_WORKSPACE_URL -e DATABRICKS_WORKSPACE_ID \

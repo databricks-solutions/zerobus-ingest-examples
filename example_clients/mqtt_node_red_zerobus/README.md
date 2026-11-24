@@ -60,6 +60,8 @@ The flow's timers and manual triggers are set in the flow editor:
    ./scripts/run-docker.sh
    ```
 
+   On Linux, `data/` must be owned by UID `1000`, the user the `nodered/node-red` image runs Node-RED as. If the script warns that it isn't, run `sudo chown -R 1000:1000 data` and start the container again. See the [Node-RED Docker documentation](https://nodered.org/docs/getting-started/docker).
+
 4. Check the container log. You should see a token fetch and a connection:
 
    ```bash
