@@ -1,0 +1,13 @@
+[package]
+name = "sdk-matrix-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+databricks-zerobus-ingest-sdk = { path = "@SDK@/rust/sdk", features = ["arrow-flight", "avro"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+arrow-array = "60.0.0"
+arrow-schema = "60.0.0"
+prost-types = "0.14.3"
+
+[workspace]

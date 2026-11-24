@@ -1,0 +1,12 @@
+# Runtime dependencies of the mock server.
+grpcio>=1.60
+grpcio-status>=1.60
+googleapis-common-protos>=1.63
+protobuf>=4.25,<7
+fastapi>=0.110
+uvicorn>=0.29
+pyyaml>=6.0
+cryptography>=42
+# Arrow Flight (DoPut) and Avro record formats.
+pyarrow>=14
+fastavro>=1.9

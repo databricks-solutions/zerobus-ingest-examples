@@ -1,0 +1,14 @@
+# Mock for the SDK matrix (tests/sdk/run_all.sh). Placeholders only.
+server:
+  host: 127.0.0.1
+  rest_port: 18543
+  grpc_port: 15551
+  public_hosts: [localhost]
+tls:
+  cert_dir: /run/tls
+tables:
+  - name: main.default.sdk_matrix
+    columns:
+      - {name: device_name, type: STRING, nullable: false}
+      - {name: temp, type: INT}
+      - {name: humidity, type: LONG}

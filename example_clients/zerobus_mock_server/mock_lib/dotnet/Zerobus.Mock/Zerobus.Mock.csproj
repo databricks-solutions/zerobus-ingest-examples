@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- UNOFFICIAL: a community test fake of the Zerobus .NET SDK (Databricks.Zerobus.Ingest.Sdk). Not affiliated with Databricks. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Zerobus.Mock</AssemblyName>
+    <RootNamespace>Databricks.Zerobus.Mock</RootNamespace>
+    <PackageId>Zerobus.Mock</PackageId>
+    <Version>0.1.0</Version>
+    <Description>UNOFFICIAL: in-process fake of the Zerobus .NET SDK for unit tests (no network). Not affiliated with Databricks.</Description>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

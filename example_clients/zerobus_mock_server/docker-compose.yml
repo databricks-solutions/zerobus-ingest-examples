@@ -1,0 +1,32 @@
+# Run the mock as a service, or run its test suite.
+#   docker compose up zerobus-mock                       # serves on 127.0.0.1:8443 (REST) and :50051 (gRPC)
+#   docker compose run --rm tests                        # runs pytest against a fresh in-process mock
+# Both services use host networking, so clients on the host reach the mock on localhost.
+services:
+  zerobus-mock:
+    build:
+      context: .
+      network: host
+      target: base
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    network_mode: host
+    volumes:
+      - ./config.example.yaml:/config/config.yaml:ro
+      - mock-data:/config/data
+    restart: "no"
+
+  tests:
+    build:
+      context: .
+      network: host
+      target: test
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    network_mode: host
+    profiles: ["test"]
+    volumes:
+      - mock-data:/config/data
+
+volumes:
+  mock-data:
