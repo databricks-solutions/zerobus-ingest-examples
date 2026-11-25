@@ -1,0 +1,22 @@
+# Zerobus mock server configuration. Placeholders only; no real workspace, client or secret.
+# Relative paths are resolved from this file's directory.
+
+server:
+  host: 127.0.0.1              # bind address for both listeners (0.0.0.0 inside a container)
+  rest_port: 8443              # HTTPS: OAuth token, REST insert, /_mock control API
+  grpc_port: 50051             # TLS gRPC: EphemeralStream and Arrow Flight DoPut
+  public_hosts:                # host names clients use; they go into the server certificate
+    - localhost                # the SDK takes the first DNS label of the endpoint as the workspace id
+
+tls:
+  cert_dir: ./data/tls         # local CA (ca.pem) and server certificate are generated here
+
+limits:
+  max_record_bytes: 10485760   # 10 MB, the documented record size maximum
+
+tables:
+  - name: main.default.air_quality
+    columns:
+      - {name: device_name, type: STRING, nullable: false}
+      - {name: temp, type: INT}
+      - {name: humidity, type: LONG}

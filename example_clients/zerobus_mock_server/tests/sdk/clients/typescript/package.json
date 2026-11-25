@@ -1,0 +1,7 @@
+{
+  "name": "sdk-matrix-typescript",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SDK matrix client (TypeScript). Pinned SDK version 1.5.0 (the repo's typescript/package.json version).",
+  "main": "client.js"
+}
