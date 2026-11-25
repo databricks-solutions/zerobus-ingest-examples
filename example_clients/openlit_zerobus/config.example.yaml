@@ -1,0 +1,62 @@
+# OpenTelemetry Collector configuration for Zerobus Ingest. Set the ${env:...} values in the environment.
+# Put no secrets in this file. Each signal has its own oauth2client extension and exporter.
+extensions:
+  oauth2client/spans:
+    client_id: ${env:DATABRICKS_CLIENT_ID}
+    client_secret: ${env:DATABRICKS_CLIENT_SECRET}
+    token_url: ${env:DATABRICKS_WORKSPACE_URL}/oidc/v1/token
+    scopes: ['all-apis']
+    endpoint_params:
+      resource: 'api://databricks/workspaces/${env:WORKSPACE_ID}/zerobusDirectWriteApi'
+      authorization_details:
+        - '[{"type":"unity_catalog_privileges","privileges":["USE CATALOG"],"object_type":"CATALOG","object_full_path":"${env:CATALOG}"},{"type":"unity_catalog_privileges","privileges":["USE SCHEMA"],"object_type":"SCHEMA","object_full_path":"${env:CATALOG}.${env:SCHEMA}"},{"type":"unity_catalog_privileges","privileges":["SELECT","MODIFY"],"object_type":"TABLE","object_full_path":"${env:CATALOG}.${env:SCHEMA}.${env:TABLE_PREFIX}_otel_spans"}]'
+
+  oauth2client/metrics:
+    client_id: ${env:DATABRICKS_CLIENT_ID}
+    client_secret: ${env:DATABRICKS_CLIENT_SECRET}
+    token_url: ${env:DATABRICKS_WORKSPACE_URL}/oidc/v1/token
+    scopes: ['all-apis']
+    endpoint_params:
+      resource: 'api://databricks/workspaces/${env:WORKSPACE_ID}/zerobusDirectWriteApi'
+      authorization_details:
+        - '[{"type":"unity_catalog_privileges","privileges":["USE CATALOG"],"object_type":"CATALOG","object_full_path":"${env:CATALOG}"},{"type":"unity_catalog_privileges","privileges":["USE SCHEMA"],"object_type":"SCHEMA","object_full_path":"${env:CATALOG}.${env:SCHEMA}"},{"type":"unity_catalog_privileges","privileges":["SELECT","MODIFY"],"object_type":"TABLE","object_full_path":"${env:CATALOG}.${env:SCHEMA}.${env:TABLE_PREFIX}_otel_metrics"}]'
+
+exporters:
+  otlp_grpc/spans:
+    endpoint: ${env:ZEROBUS_ENDPOINT}:443
+    auth:
+      authenticator: oauth2client/spans
+    headers:
+      x-databricks-zerobus-table-name: '${env:CATALOG}.${env:SCHEMA}.${env:TABLE_PREFIX}_otel_spans'
+
+  otlp_grpc/metrics:
+    endpoint: ${env:ZEROBUS_ENDPOINT}:443
+    auth:
+      authenticator: oauth2client/metrics
+    headers:
+      x-databricks-zerobus-table-name: '${env:CATALOG}.${env:SCHEMA}.${env:TABLE_PREFIX}_otel_metrics'
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:4317
+      http:
+        endpoint: 127.0.0.1:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 10
+
+service:
+  extensions: [oauth2client/spans, oauth2client/metrics]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_grpc/spans]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_grpc/metrics]
