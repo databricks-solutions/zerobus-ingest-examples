@@ -1,0 +1,41 @@
+# OpenTelemetry Collector (Contrib) configuration: OTLP in, Zerobus Ingest traces out.
+# Placeholders only. Set the ${env:...} variables where the Collector runs (see README, Configuration reference).
+extensions:
+  oauth2client/spans:
+    client_id: ${env:DATABRICKS_CLIENT_ID}
+    client_secret: ${env:DATABRICKS_CLIENT_SECRET}
+    token_url: ${env:DATABRICKS_WORKSPACE_URL}/oidc/v1/token
+    scopes: ['all-apis']
+    endpoint_params:
+      resource: 'api://databricks/workspaces/${env:WORKSPACE_ID}/zerobusDirectWriteApi'
+      authorization_details:
+        - '[{"type":"unity_catalog_privileges","privileges":["USE CATALOG"],"object_type":"CATALOG","object_full_path":"${env:CATALOG}"},{"type":"unity_catalog_privileges","privileges":["USE SCHEMA"],"object_type":"SCHEMA","object_full_path":"${env:CATALOG}.${env:SCHEMA}"},{"type":"unity_catalog_privileges","privileges":["SELECT","MODIFY"],"object_type":"TABLE","object_full_path":"${env:CATALOG}.${env:SCHEMA}.${env:TABLE_PREFIX}_otel_spans"}]'
+
+exporters:
+  otlp/spans:
+    endpoint: ${env:ZEROBUS_ENDPOINT}:443
+    auth:
+      authenticator: oauth2client/spans
+    headers:
+      x-databricks-zerobus-table-name: '${env:CATALOG}.${env:SCHEMA}.${env:TABLE_PREFIX}_otel_spans'
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:4317
+      http:
+        endpoint: 127.0.0.1:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 10
+
+service:
+  extensions: [oauth2client/spans]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/spans]

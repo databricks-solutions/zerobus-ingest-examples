@@ -57,6 +57,7 @@ If your contribution is a **complete, narrative-driven showcase** with data gene
 | [`filament_zerobus`](filament_zerobus/) | PostgreSQL (full snapshots and CDC) via Filament | Docker Compose, SQL, Bash | Replicates PostgreSQL tables into Delta tables with Filament's native `databrickszerobus` sink, running Filament's server, control plane and `-libc` worker with PostgreSQL and NATS JetStream |
 | [`telegraf_zerobus`](telegraf_zerobus/) | Host and app metrics via Telegraf | Python (FastAPI), Telegraf config (TOML) | A dice-roll app sends metrics through Telegraf's OpenTelemetry output to Zerobus Ingest's OTLP metrics endpoint, which writes them to a Delta table, with no message bus in between |
 | [`zerobus_mock_server`](zerobus_mock_server/) | Test double for Zerobus Ingest | Python (FastAPI, gRPC), Java, TypeScript, Go, Rust, C++, .NET, Docker Compose | Mock server of the REST and gRPC ingest APIs (JSON, protobuf, Arrow Flight, Avro) with in-memory tables and a read-back API for integration tests, plus mock SDK libraries for unit tests, sharing eleven deterministic failure scenarios |
+| [`llamaindex_zerobus`](llamaindex_zerobus/) | LlamaIndex (RAG query engine, OpenTelemetry) | Python, OpenTelemetry Collector config (YAML) | Query-engine spans go through the Collector's `oauth2client` extension to one Delta table; MockLLM and MockEmbedding, no keys |
 
 ## Planned Clients
 
