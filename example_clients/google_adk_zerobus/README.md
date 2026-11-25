@@ -21,7 +21,7 @@ ADK agent (google-adk)  --OTLP/HTTP :4318-->  OpenTelemetry Collector (oauth2cli
 
 ## Configuration reference
 
-Copy `config.example.env` to `.env` and fill it in. The Collector reads the `DATABRICKS_*`, `WORKSPACE_ID`, `ZEROBUS_ENDPOINT`, `CATALOG`, `SCHEMA` and `TABLE_PREFIX` values. The agent app reads the `OTEL_*` values.
+Copy `config.example.env` to `.env` and fill it in. The Collector reads the `DATABRICKS_*`, `WORKSPACE_ID`, `ZEROBUS_ENDPOINT`, `CATALOG`, `SCHEMA`, and `TABLE_PREFIX` values. The agent app reads the `OTEL_*` values.
 
 | Variable | Used by | Description |
 |----------|---------|-------------|
@@ -29,7 +29,7 @@ Copy `config.example.env` to `.env` and fill it in. The Collector reads the `DAT
 | `DATABRICKS_CLIENT_ID` | Collector | Service principal client ID. |
 | `DATABRICKS_CLIENT_SECRET` | Collector | Service principal OAuth secret. Keep it out of source control. |
 | `WORKSPACE_ID` | Collector | Workspace ID, used in the `resource` for the token request. |
-| `ZEROBUS_ENDPOINT` | Collector | Zerobus Ingest host, `<workspace-id>.zerobus.<region>.cloud.databricks.com`. |
+| `ZEROBUS_ENDPOINT` | Collector | Zerobus Ingest host, without `https://` or the port. On AWS, `<workspace-id>.zerobus.<region>.cloud.databricks.com`. On Azure, `<workspace-id>.zerobus.<region>.azuredatabricks.net`. On GCP, `<workspace-id>.zerobus.<region>.gcp.databricks.com`. |
 | `CATALOG`, `SCHEMA`, `TABLE_PREFIX` | Collector | The table name is `<catalog>.<schema>.<prefix>_otel_spans`. |
 | `OTEL_SERVICE_NAME` | Agent app | Service name on every span, stored in `service_name`. |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Agent app | Collector OTLP/HTTP traces URL, `http://127.0.0.1:4318/v1/traces`. |
@@ -37,9 +37,9 @@ Copy `config.example.env` to `.env` and fill it in. The Collector reads the `DAT
 
 ## Quick start
 
-1. Create the spans table. Replace the placeholders in `sql/create_otel_spans_table.sql` with your catalog, schema and prefix, then run it in a SQL editor or with the Databricks CLI.
+1. Create the spans table. Replace the placeholders in `sql/create_otel_spans_table.sql` with your catalog, schema, and prefix, then run it in a SQL editor or with the Databricks CLI.
 
-2. Grant the service principal access to the table. Replace `<service-principal-uuid>` with its application ID:
+2. Grant the service principal access to the table. Replace `<service-principal-uuid>` with its client ID:
 
    ```sql
    GRANT USE CATALOG ON CATALOG <catalog> TO `<service-principal-uuid>`;
@@ -82,7 +82,7 @@ Copy `config.example.env` to `.env` and fill it in. The Collector reads the `DAT
    ORDER BY name;
    ```
 
-   Five runs produce 25 spans: 5 `invoke_workflow`, 5 `invoke_agent`, 5 `execute_tool` and 10 `generate_content`.
+   Five runs produce 25 spans: 5 `invoke_workflow`, 5 `invoke_agent`, 5 `execute_tool`, and 10 `generate_content`.
 
 7. Run the offline tests, which don't need Databricks or the Collector:
 
@@ -103,7 +103,7 @@ The table has the fixed OpenTelemetry Zerobus schema (`otel.schemaVersion` = `v2
 | `attributes` | `VARIANT`: `gen_ai.operation.name`, `gen_ai.agent.name`, `gen_ai.tool.name`, `gen_ai.usage.input_tokens` and similar |
 | `start_time_unix_nano`, `end_time_unix_nano` | Span timing |
 
-The span tree for one agent run is `invoke_workflow` at the root, with `invoke_agent` below it. Under `invoke_agent` are the `generate_content` spans (one per model call) and the `execute_tool` span (one per tool call). Use `parent_span_id` to rebuild it.
+The span tree for one agent run is `invoke_workflow` at the root, and `invoke_agent` as its child span. Under `invoke_agent` are the `generate_content` spans (one per model call) and the `execute_tool` span (one per tool call). Use `parent_span_id` to rebuild it.
 
 To see the attributes of a span, query `to_json(attributes)`.
 
