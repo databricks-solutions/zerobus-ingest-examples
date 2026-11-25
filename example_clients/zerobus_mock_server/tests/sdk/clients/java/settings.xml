@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Maven mirror for the image build. The URL is supplied by the build argument MAVEN_MIRROR. -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <mirrors>
+    <mirror><id>matrix-mirror</id><mirrorOf>*</mirrorOf><url>${env.MAVEN_MIRROR}</url></mirror>
+  </mirrors>
+</settings>
