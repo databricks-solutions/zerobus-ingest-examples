@@ -15,13 +15,13 @@ ADK agent (google-adk)  --OTLP/HTTP :4318-->  OpenTelemetry Collector (oauth2cli
 ## Prerequisites
 
 - Python 3.12.
-- OpenTelemetry Collector contrib v0.165.0 or later, from the [releases page](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) or the `otel/opentelemetry-collector-contrib` image. The `oauth2client` extension must be in the build.
-- A Databricks workspace with Zerobus Ingest enabled, and a service principal with an OAuth secret.
+- OpenTelemetry Collector Contrib v0.165.0, the version this example was tested with, from the [releases page](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) or the `otel/opentelemetry-collector-contrib:0.165.0` image. The `oauth2client` extension must be in the build.
+- A Databricks workspace with Zerobus Ingest enabled (tested on AWS), and a service principal with an OAuth secret.
 - Privileges for the service principal on the target table: `USE CATALOG` on the catalog, `USE SCHEMA` on the schema, and `MODIFY` and `SELECT` on the table. The table's creator already has these.
 
 ## Configuration reference
 
-Copy `config.example.env` to `.env` and fill it in. The Collector reads the `DATABRICKS_*`, `WORKSPACE_ID`, `REGION`, `ZEROBUS_ENDPOINT`, `CATALOG`, `SCHEMA` and `TABLE_PREFIX` values. The agent app reads the `OTEL_*` values.
+Copy `config.example.env` to `.env` and fill it in. The Collector reads the `DATABRICKS_*`, `WORKSPACE_ID`, `ZEROBUS_ENDPOINT`, `CATALOG`, `SCHEMA` and `TABLE_PREFIX` values. The agent app reads the `OTEL_*` values.
 
 | Variable | Used by | Description |
 |----------|---------|-------------|
@@ -33,18 +33,18 @@ Copy `config.example.env` to `.env` and fill it in. The Collector reads the `DAT
 | `CATALOG`, `SCHEMA`, `TABLE_PREFIX` | Collector | The table name is `<catalog>.<schema>.<prefix>_otel_spans`. |
 | `OTEL_SERVICE_NAME` | Agent app | Service name on every span, stored in `service_name`. |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Agent app | Collector OTLP/HTTP traces URL, `http://127.0.0.1:4318/v1/traces`. |
-| `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS` | Agent app | ADK records prompt and response content in spans by default (`true`). Set it to `false` if the content is sensitive. |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Agent app | Leave unset (the default) and the spans hold no prompts, responses or tool text. Set it to `SPAN_ONLY` to record them in `gen_ai.input.messages` and `gen_ai.output.messages`. |
 
 ## Quick start
 
 1. Create the spans table. Replace the placeholders in `sql/create_otel_spans_table.sql` with your catalog, schema and prefix, then run it in a SQL editor or with the Databricks CLI.
 
-2. Grant the service principal access to the table:
+2. Grant the service principal access to the table. Replace `<service-principal-uuid>` with its application ID:
 
    ```sql
-   GRANT USE CATALOG ON CATALOG <catalog> TO `<service-principal-name>`;
-   GRANT USE SCHEMA ON SCHEMA <catalog>.<schema> TO `<service-principal-name>`;
-   GRANT MODIFY, SELECT ON TABLE <catalog>.<schema>.<prefix>_otel_spans TO `<service-principal-name>`;
+   GRANT USE CATALOG ON CATALOG <catalog> TO `<service-principal-uuid>`;
+   GRANT USE SCHEMA ON SCHEMA <catalog>.<schema> TO `<service-principal-uuid>`;
+   GRANT MODIFY, SELECT ON TABLE <catalog>.<schema>.<prefix>_otel_spans TO `<service-principal-uuid>`;
    ```
 
 3. Install the agent's pinned dependencies in a virtual environment:
@@ -73,7 +73,7 @@ Copy `config.example.env` to `.env` and fill it in. The Collector reads the `DAT
 
    Each line of output looks like `run 1/5: Rolled a d6 and got 4.`
 
-6. Query the table after about 10 seconds:
+6. After the agent finishes, wait about 5 seconds for the Collector's `batch` processor to send the last spans (its `timeout` is `5s`), then query the table:
 
    ```sql
    SELECT name, count(*) AS n
@@ -107,9 +107,9 @@ The span tree for one agent run is `invoke_workflow` at the root, with `invoke_a
 
 To see the attributes of a span, query `to_json(attributes)`.
 
-## How to extend
+## <a id="how-to-extend"></a>How to extend
 
-- **Use a real model.** Replace `FakeDiceModel` in `src/fake_model.py` with an ADK model, such as a Gemini or LiteLLM model, and set its credentials in the environment. The spans don't change. `generate_content` gets the model's name and token usage.
-- **Add tools.** Add Python functions to `tools=[...]` on the `LlmAgent` in `src/dice_agent.py`. ADK creates an `execute_tool` span for each call.
-- **Send logs and metrics.** This example exports traces only. ADK also exports logs and metrics when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, but this example doesn't test them. To add them, create the matching `_otel_logs` and `_otel_metrics` tables, and add a logs and a metrics pipeline in `collector/collector.yaml` with their own `oauth2client` extension and exporter.
-- **Keep content out of spans.** Set `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false` to drop prompts and responses from the spans.
+- **Real model**: Replace `FakeDiceModel` in `src/fake_model.py` with an ADK model, such as a Gemini or LiteLLM model, and set its credentials in the environment. This example doesn't test a real model, so check its spans with `to_json(attributes)`.
+- **Tools**: Add Python functions to `tools=[...]` on the `LlmAgent` in `src/dice_agent.py`. ADK creates an `execute_tool` span for each call.
+- **Logs and metrics**: This example exports traces only. ADK also exports logs and metrics when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, but this example doesn't test them. To add them, create the matching `_otel_logs` and `_otel_metrics` tables, and add a logs and a metrics pipeline in `collector/collector.yaml` with their own `oauth2client` extension and exporter.
+- **Prompts and responses**: The spans don't hold them by default. Set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY` to add them. Only do this when the table may store that text. `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS` made no difference in the test run.
