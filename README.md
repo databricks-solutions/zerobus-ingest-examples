@@ -33,6 +33,7 @@ In this repo, you will find examples and demos of Zerobus Ingest, a push-based A
 * [GenAI Agent Zerobus](./example_clients/genai_agent_zerobus/) - Ship a Python GenAI agent's OpenTelemetry traces, logs, and metrics into Delta tables via Zerobus, then view them as agentic traces in MLflow (LangChain example + drop-in exporter)
 * [Zerobus Mock Server](./example_clients/zerobus_mock_server/) - A local test double for Zerobus Ingest: a mock server (REST and gRPC; JSON, protobuf, Arrow Flight and Avro) for integration tests, and in-process mock libraries for Python, Java, TypeScript, Go, Rust, C++ and .NET unit tests, sharing eleven deterministic failure scenarios
 * [Paho MQTT Zerobus](./example_clients/mqtt_paho_python_zerobus/) - Publish JSON records from a long-running Python Paho MQTT client to a Delta table through the Zerobus Ingest MQTT endpoint, with a new token on each reconnect and PUBACK tracking (Python)
+* [Eclipse Paho Java Zerobus](./example_clients/mqtt_paho_java_zerobus/) - Publish JSON sensor readings over MQTT v5 from a Java app to a Delta table through the Zerobus Ingest MQTT endpoint, with a required rescue column for records that don't match the table
 
 *Coming soon* - MQTT and more.
 
