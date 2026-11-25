@@ -10,16 +10,16 @@ Use this example when your RAG or query-engine app runs longer than one hour, so
 
 The example app uses LlamaIndex's `MockLLM` and `MockEmbedding`, so it runs with no model API key. The span tree is the same kind a real LLM app produces.
 
-**What lands in the table:** every span row has the LlamaIndex span name, the trace and span IDs, the parent span ID, and the service name. The payload is in the `events` column, not in `attributes`. Events include the embedding inputs and outputs, the retrieved text, and the LLM prompt. If your prompts or documents contain sensitive text, they go to the table too.
+Each span row has the LlamaIndex span name, the trace and span IDs, the parent span ID, and the service name. The payload is in the `events` column, not in `attributes`. The `LLMCompletionStartEvent` event holds the prompt, including the retrieved text. If your prompts or documents contain sensitive text, they go to the table too.
 
 ## Prerequisites
 
 - A workspace in a region that supports Zerobus Ingest. See [Zerobus Ingest](https://docs.databricks.com/ingestion/zerobus-ingest) for the endpoint and the workspace URL.
 - A Unity Catalog catalog and schema, with a managed Delta table for spans that meets the [Zerobus Ingest table requirements](https://docs.databricks.com/ingestion/zerobus-concepts#table-requirements). Create the table with `scripts/create_table.sql`.
 - A service principal with an OAuth secret and the Workspace access entitlement. It needs `USE CATALOG`, `USE SCHEMA`, and `MODIFY` and `SELECT` on the spans table.
-- [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) with the `oauth2client` extension. Check that `otelcol-contrib components` lists it.
-- Python 3.11 or later with `pip` (tested with 3.12).
-- Docker is optional; the Quick start doesn't use it.
+- [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) v0.165.0, the version this example was tested with, with the `oauth2client` extension. Check that `otelcol-contrib components` lists it.
+- Python 3.11 and above with `pip` (tested with 3.12).
+- Docker is optional. The Quick start doesn't use it.
 
 ## Configuration reference
 
@@ -49,7 +49,7 @@ The app reads one variable:
 
 1. Create the table. In Databricks SQL, replace `<catalog>.<schema>.<prefix>` and `<service-principal-uuid>` in `scripts/create_table.sql`, then run it.
 
-2. Install the Collector Contrib. Download the archive for your platform from the [OpenTelemetry Collector releases page](https://github.com/open-telemetry/opentelemetry-collector-releases/releases), compare its SHA-256 hash with the `.sha256` file next to it, and extract it. Then check the extension:
+2. Install the Collector Contrib. Download the v0.165.0 archive for your platform from the [OpenTelemetry Collector releases page](https://github.com/open-telemetry/opentelemetry-collector-releases/releases), compare its SHA-256 hash with the `.sha256` file next to it, and extract it. Then check the extension:
 
    ```bash
    ./otelcol-contrib --version
@@ -62,7 +62,7 @@ The app reads one variable:
    ./otelcol-contrib --config=config.example.yaml
    ```
 
-   The log ends with `Everything is ready. Begin running and processing data.` The `"otlp" alias is deprecated` warning is expected; the config keeps the `otlp` exporter name.
+   The log ends with `Everything is ready. Begin running and processing data.` The `"otlp" alias is deprecated` warning is expected. The config keeps the `otlp` exporter name.
 
 4. Install the app's dependencies in a virtual environment:
 
@@ -90,7 +90,7 @@ The app reads one variable:
    ORDER BY spans DESC;
    ```
 
-   The root span is `RetrieverQueryEngine.query`. Its children include `VectorIndexRetriever.retrieve`, `MockEmbedding.get_query_embedding` and `MockLLM.complete`.
+   The root span is `RetrieverQueryEngine.query`. Its only direct child is `RetrieverQueryEngine._query`. Its descendants include `VectorIndexRetriever.retrieve`, `MockEmbedding.get_query_embedding` (with the nested `MockEmbedding._get_query_embedding`) and `MockLLM.complete`.
 
 7. Run the offline tests. They don't need the Collector, a workspace, or a model key:
 
@@ -118,13 +118,13 @@ The spans table has the OpenTelemetry v2 span schema used by Zerobus Ingest. Ste
 | `kind` | STRING | `SPAN_KIND_INTERNAL` for every span here |
 | `start_time_unix_nano`, `end_time_unix_nano` | LONG | Start and end times |
 | `attributes` | VARIANT | Empty in this example. LlamaIndex puts its data in `events` |
-| `events` | ARRAY of STRUCT | The LlamaIndex events. Each has a `name` (such as `LLMCompletionStartEvent`) and `attributes`, which include the prompt, the retrieved text and the embedding values |
+| `events` | ARRAY of STRUCT | The LlamaIndex events. Each has a `name` (such as `LLMCompletionStartEvent`) and `attributes`, which include the prompt and the retrieved text |
 | `status` | STRUCT | `STATUS_CODE_OK` for a span that completed |
 | `resource` | STRUCT | `service.name` and other resource attributes |
 
 ## How to extend
 
-- **Another LlamaIndex app:** call `configure_tracing()` once, before you build the index or the query engine, then run your code as usual. Every LlamaIndex call in the process is traced.
+- **Another LlamaIndex app:** call `configure_tracing()` one time, before you build the index or the query engine, then run your code as usual. Every LlamaIndex call in the process is traced.
 - **Another service name:** set `OTEL_SERVICE_NAME`, or pass `service_name=` to `configure_tracing()`.
 - **Another exporter or Collector:** change `OTLP_TRACES_ENDPOINT`. The app's `OTLPSpanExporter` takes the same URL for any OTLP/HTTP receiver.
 - **Logs or metrics:** LlamaIndex's OpenTelemetry package emits spans only. Logs and metrics need their own pipeline and their own tables (`<prefix>_otel_logs`, `<prefix>_otel_metrics`), with the table definitions and grants from the OpenTelemetry Collector page.
@@ -134,5 +134,5 @@ The spans table has the OpenTelemetry v2 span schema used by Zerobus Ingest. Ste
 
 - **The Collector logs `Exporting failed … DeadlineExceeded`:** the Collector retries the batch, and in this example the batch landed after the retry. If the error repeats, check that the Collector can reach the Zerobus Ingest endpoint on port 443.
 - **The app logs `Failed to export spans batch due to timeout, max retries or shutdown` after you restart the Collector:** the app's span exporter retries for a limited time. Spans from the batch that failed are dropped. Keep the Collector running during the app's run, or restart the Collector between runs.
-- **No rows, and the Collector logs a permission error:** check the grants in `scripts/create_table.sql`. The service principal needs `USE CATALOG`, `USE SCHEMA`, and `MODIFY` and `SELECT` on the spans table.
+- **No rows, and the Collector logs `Exporting failed. Dropping data.` with `User is not authorized to the requested authorizations`:** the Collector asks for the privileges in `authorization_details` when it gets its token. If the service principal lacks one, the token request is refused, and the Collector drops the batch. The app gets no error. Check the grants in `scripts/create_table.sql`. The service principal needs `USE CATALOG`, `USE SCHEMA`, and `MODIFY` and `SELECT` on the spans table.
 - **A request returns HTTP 400 with `length mismatch`:** one span in the request has an invalid trace or span ID. The whole request is rejected, and the valid spans in it aren't stored. `scripts/send_bad_span.py` reproduces this.
