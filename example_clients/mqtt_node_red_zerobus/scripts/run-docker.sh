@@ -17,4 +17,4 @@ docker run -d --name zerobus-node-red \
   -e DATABRICKS_TABLE_NAME -e ZEROBUS_MQTT_HOST \
   -p "127.0.0.1:${PORT}:${PORT}" \
   -v "$(pwd)/data:/data" \
-  nodered/node-red:latest
+  nodered/node-red:5.0.10
