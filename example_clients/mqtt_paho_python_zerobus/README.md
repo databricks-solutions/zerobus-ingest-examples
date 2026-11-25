@@ -19,7 +19,7 @@ For the basic connect-and-publish flow, see the [Python example](https://docs.da
 - MQTT enabled for your workspace, and Zerobus Ingest available in your region.
 - An existing Unity Catalog Delta table with the rescue column (`rescue VARIANT`, tagged `zerobus-rescue`). It is required. See [Schema](#schema). Zerobus Ingest doesn't create tables.
 - A service principal with `USE CATALOG`, `USE SCHEMA`, `SELECT`, and `MODIFY` on the table. See [Create a service principal and grant permissions](https://docs.databricks.com/aws/en/ingestion/zerobus-ingest#service-principal).
-- Python 3.12 (the version this example was tested with), with `pip`.
+- Python 3.10 or later, with `pip`. The pinned `requests` release needs Python 3.10.
 - Outbound TLS to `<workspace-id>.zerobus.<region>.<cloud-domain>` on port `8883`.
 
 ## Configuration reference
