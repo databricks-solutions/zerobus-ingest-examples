@@ -1,0 +1,528 @@
+[
+    {
+        "id": "zb-tab",
+        "type": "tab",
+        "label": "Zerobus MQTT 5 (MQTT out)",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "inj-start",
+        "type": "inject",
+        "z": "zb-tab",
+        "name": "Start (once)",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "2",
+        "topic": "start",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 80,
+        "wires": [
+            [
+                "fn-plan"
+            ]
+        ]
+    },
+    {
+        "id": "inj-refresh",
+        "type": "inject",
+        "z": "zb-tab",
+        "name": "Refresh token and reconnect (every 15 min)",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "900",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "refresh",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 140,
+        "wires": [
+            [
+                "fn-plan"
+            ]
+        ]
+    },
+    {
+        "id": "inj-watch",
+        "type": "inject",
+        "z": "zb-tab",
+        "name": "Link watch: reconnect if down (every 30 s)",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "30",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "watch",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 200,
+        "wires": [
+            [
+                "fn-plan"
+            ]
+        ]
+    },
+    {
+        "id": "fn-plan",
+        "type": "function",
+        "z": "zb-tab",
+        "name": "Plan: fetch a token, or skip if the link is up",
+        "func": "// Decide what the flow does for each trigger. Every CONNECT carries a token fetched just before it.\n//   start   -> fetch a token, then connect\n//   refresh -> fetch a token, then force a reconnect so the new CONNECT carries it\n//   watch   -> if the link is down: fetch a token, then connect (a new token on every watch reconnect)\n//              if the link is up: do nothing (no token request every 30 s)\n// The link state comes from the status-link node (flow.zbLinkUp).\nconst topic = msg.topic || '';\nif (topic === 'watch' && flow.get('zbLinkUp') === true) {\n    return null;\n}\nmsg.cycle = (topic === 'refresh');\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 140,
+        "wires": [
+            [
+                "fn-token-req"
+            ]
+        ]
+    },
+    {
+        "id": "fn-token-req",
+        "type": "function",
+        "z": "zb-tab",
+        "name": "Build token request",
+        "func": "// OAuth client-credentials request for a table-scoped Zerobus token.\n// All settings come from environment variables. Nothing secret is written into the flow.\nfunction need(name) {\n    const value = env.get(name);\n    if (!value) { throw new Error('Set the ' + name + ' environment variable'); }\n    return value;\n}\nconst workspaceUrl = need('DATABRICKS_WORKSPACE_URL').replace(/\\/+$/, '');\nconst workspaceId = need('DATABRICKS_WORKSPACE_ID');\nconst table = need('DATABRICKS_TABLE_NAME');\nconst [catalog, schema] = table.split('.');\nconst authorizationDetails = [\n    { type: 'unity_catalog_privileges', privileges: ['USE CATALOG'], object_type: 'CATALOG', object_full_path: catalog },\n    { type: 'unity_catalog_privileges', privileges: ['USE SCHEMA'], object_type: 'SCHEMA', object_full_path: catalog + '.' + schema },\n    { type: 'unity_catalog_privileges', privileges: ['SELECT', 'MODIFY'], object_type: 'TABLE', object_full_path: table },\n];\nconst basic = Buffer.from(need('DATABRICKS_CLIENT_ID') + ':' + need('DATABRICKS_CLIENT_SECRET')).toString('base64');\nmsg.method = 'POST';\nmsg.url = workspaceUrl + '/oidc/v1/token';\nmsg.headers = { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: 'Basic ' + basic };\nmsg.payload = new URLSearchParams({\n    grant_type: 'client_credentials',\n    scope: 'all-apis',\n    resource: 'api://databricks/workspaces/' + workspaceId + '/zerobusDirectWriteApi',\n    authorization_details: JSON.stringify(authorizationDetails),\n}).toString();\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 580,
+        "y": 100,
+        "wires": [
+            [
+                "http-token"
+            ]
+        ]
+    },
+    {
+        "id": "http-token",
+        "type": "http request",
+        "z": "zb-tab",
+        "name": "OAuth token (client credentials)",
+        "method": "use",
+        "ret": "txt",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 780,
+        "y": 100,
+        "wires": [
+            [
+                "fn-store"
+            ]
+        ]
+    },
+    {
+        "id": "fn-store",
+        "type": "function",
+        "z": "zb-tab",
+        "name": "Store token (no logging of the value)",
+        "func": "// Keep the token in flow context (memory only) and pass the message on. Never log the token.\nlet response = null;\ntry { response = JSON.parse(msg.payload); } catch (err) { response = null; }\nif (msg.statusCode !== 200 || !response || !response.access_token) {\n    node.error('Token request failed with HTTP ' + msg.statusCode + '; nothing connected');\n    return null;\n}\nflow.set('zbToken', response.access_token);\nflow.set('zbTokenAt', Date.now());\n// FNV-1a 32-bit fingerprint for logs only (function nodes have no crypto module).\nlet hash = 0x811c9dc5;\nconst token = response.access_token;\nfor (let i = 0; i < token.length; i++) { hash ^= token.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0; }\nnode.warn('token ' + hash.toString(16).padStart(8, '0') + ' fetched (expires_in ' + response.expires_in + 's)');\ndelete msg.payload; delete msg.headers; delete msg.url; delete msg.method; delete msg.statusCode;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 960,
+        "y": 100,
+        "wires": [
+            [
+                "fn-connect"
+            ]
+        ]
+    },
+    {
+        "id": "fn-connect",
+        "type": "function",
+        "z": "zb-tab",
+        "name": "Connect action with cached token",
+        "func": "// Connect action for the mqtt out node. The CONNECT carries the token that was fetched just before\n// (start, refresh, or a watch reconnect), so no CONNECT reuses an older token.\n// msg.cycle (refresh) forces a disconnect and reconnect so the new token is used.\n// Without force, a connect while already connected is refused by the node, which the catch node\n// treats as the normal \"link is up\" answer.\nconst token = flow.get('zbToken');\nif (!token) { node.error('No token cached; skipping connect'); return null; }\nmsg.action = 'connect';\nmsg.broker = {\n    broker: env.get('ZEROBUS_MQTT_HOST'),\n    port: 8883,\n    usetls: true,\n    protocolVersion: 5,\n    clientid: 'zerobus-node-red-' + Date.now(),\n    userProperties: JSON.stringify({\n        Authorization: 'Bearer ' + token,\n        'x-databricks-zerobus-table-name': env.get('DATABRICKS_TABLE_NAME'),\n    }),\n    force: msg.cycle === true,\n};\ndelete msg.payload; delete msg.cycle; delete msg.topic;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1140,
+        "y": 140,
+        "wires": [
+            [
+                "mqtt-out"
+            ]
+        ]
+    },
+    {
+        "id": "inj-roll",
+        "type": "inject",
+        "z": "zb-tab",
+        "name": "Roll a die (every 2 s)",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "2",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 320,
+        "wires": [
+            [
+                "fn-roll"
+            ]
+        ]
+    },
+    {
+        "id": "fn-roll",
+        "type": "function",
+        "z": "zb-tab",
+        "name": "Demo record",
+        "func": "// Demo app: a six-sided die roll. Publishes once every two seconds.\nmsg.topic = env.get('DATABRICKS_TABLE_NAME');\nmsg.qos = 1;\nmsg.payload = {\n    roll_id: Date.now(),\n    player: 'node-red-demo',\n    die_sides: 6,\n    roll: 1 + Math.floor(Math.random() * 6),\n    rolled_at: new Date().toISOString(),\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 320,
+        "wires": [
+            [
+                "mqtt-out"
+            ]
+        ]
+    },
+    {
+        "id": "inj-bad",
+        "type": "inject",
+        "z": "zb-tab",
+        "name": "Send one type-mismatch record (manual)",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 380,
+        "wires": [
+            [
+                "fn-bad"
+            ]
+        ]
+    },
+    {
+        "id": "fn-bad",
+        "type": "function",
+        "z": "zb-tab",
+        "name": "Type-mismatch record (roll is a string)",
+        "func": "// One record whose roll is a string, but the table column is INT (a type mismatch).\n// With the rescue column, the server stores the value in rescue and keeps the connection up.\nmsg.topic = env.get('DATABRICKS_TABLE_NAME');\nmsg.qos = 1;\nmsg.payload = {\n    roll_id: Date.now(),\n    player: 'node-red-demo',\n    die_sides: 6,\n    roll: 'six',\n    rolled_at: new Date().toISOString(),\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 380,
+        "wires": [
+            [
+                "mqtt-out"
+            ]
+        ]
+    },
+    {
+        "id": "inj-extra",
+        "type": "inject",
+        "z": "zb-tab",
+        "name": "Send one extra-field record (manual)",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 440,
+        "wires": [
+            [
+                "fn-extra"
+            ]
+        ]
+    },
+    {
+        "id": "fn-extra",
+        "type": "function",
+        "z": "zb-tab",
+        "name": "Extra-field record (unknown field)",
+        "func": "// One record with a field the table does not have (extra_field).\n// With the rescue column, the server stores the field in rescue and keeps the connection up.\nmsg.topic = env.get('DATABRICKS_TABLE_NAME');\nmsg.qos = 1;\nmsg.payload = {\n    roll_id: Date.now(),\n    player: 'node-red-demo',\n    die_sides: 6,\n    roll: 1 + Math.floor(Math.random() * 6),\n    rolled_at: new Date().toISOString(),\n    extra_field: 'hello',\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 440,
+        "wires": [
+            [
+                "mqtt-out"
+            ]
+        ]
+    },
+    {
+        "id": "inj-text",
+        "type": "inject",
+        "z": "zb-tab",
+        "name": "Send one non-JSON payload (manual)",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 500,
+        "wires": [
+            [
+                "fn-text"
+            ]
+        ]
+    },
+    {
+        "id": "fn-text",
+        "type": "function",
+        "z": "zb-tab",
+        "name": "Non-JSON payload",
+        "func": "// A payload that is not JSON. The server answers PUBACK 0x99 (Payload format invalid),\n// stores nothing, and keeps the connection up, with or without the rescue column.\nmsg.topic = env.get('DATABRICKS_TABLE_NAME');\nmsg.qos = 1;\nmsg.payload = 'not json ' + Date.now() + ' ((';\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 500,
+        "wires": [
+            [
+                "mqtt-out"
+            ]
+        ]
+    },
+    {
+        "id": "mqtt-out",
+        "type": "mqtt out",
+        "z": "zb-tab",
+        "name": "Zerobus Ingest (MQTT 5, QoS 1)",
+        "topic": "",
+        "qos": "1",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "zb-broker",
+        "x": 1340,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "status-link",
+        "type": "status",
+        "z": "zb-tab",
+        "name": "Link state (mqtt out status)",
+        "scope": [
+            "mqtt-out"
+        ],
+        "x": 1340,
+        "y": 380,
+        "wires": [
+            [
+                "fn-link"
+            ]
+        ]
+    },
+    {
+        "id": "fn-link",
+        "type": "function",
+        "z": "zb-tab",
+        "name": "Store link state (no token in text)",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1520,
+        "y": 380,
+        "wires": [
+            []
+        ],
+        "func": "// The mqtt out node reports \"connected\" or \"disconnected\" as its status. The watch trigger reads the flag.\nconst text = (msg.status && msg.status.text) || '';\nif (/common\\.status\\.connected$/.test(text)) { flow.set('zbLinkUp', true); }\nelse if (/common\\.status\\.disconnected$/.test(text)) { flow.set('zbLinkUp', false); }\nreturn null;\n"
+    },
+    {
+        "id": "catch-mqtt",
+        "type": "catch",
+        "z": "zb-tab",
+        "name": "Connect refused while up, or publish error",
+        "scope": [
+            "mqtt-out"
+        ],
+        "uncaught": false,
+        "x": 1340,
+        "y": 320,
+        "wires": [
+            [
+                "fn-catch"
+            ]
+        ]
+    },
+    {
+        "id": "fn-catch",
+        "type": "function",
+        "z": "zb-tab",
+        "name": "Log unexpected MQTT errors (no token in text)",
+        "func": "// Connect while connected is expected from the watch trigger; report anything else.\n// A publish error here is a PUBACK with a reason code, e.g. 'Payload format invalid' (0x99) for non-JSON.\n// A type mismatch or extra field gives no error when the rescue column is present.\nconst text = (msg.error && msg.error.message) || '';\n// The node's text for a connect while connected is \"Disconnect from broker before connecting\".\nif (text.indexOf('Disconnect from broker before connecting') === -1) {\n    node.warn('mqtt out: ' + text);\n}\nreturn null;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1520,
+        "y": 320,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "zb-broker",
+        "type": "mqtt-broker",
+        "name": "Zerobus Ingest endpoint",
+        "broker": "",
+        "port": "",
+        "tls": "zb-tls",
+        "clientid": "",
+        "autoConnect": false,
+        "usetls": true,
+        "protocolVersion": "5",
+        "keepalive": 60,
+        "cleansession": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "zb-tls",
+        "type": "tls-config",
+        "name": "TLS (verify server certificate)",
+        "cert": "",
+        "key": "",
+        "ca": "",
+        "certname": "",
+        "keyname": "",
+        "caname": "",
+        "servername": "",
+        "verifyservercert": true,
+        "alpnprotocol": ""
+    }
+]
