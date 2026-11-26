@@ -36,6 +36,7 @@ In this repo, you will find examples and demos of Zerobus Ingest, a push-based A
 * [Paho MQTT Zerobus](./example_clients/mqtt_paho_python_zerobus/) - Publish JSON records from a long-running Python Paho MQTT client to a Delta table through the Zerobus Ingest MQTT endpoint, with a new token on each reconnect and PUBACK tracking (Python)
 * [Eclipse Paho Java Zerobus](./example_clients/mqtt_paho_java_zerobus/) - Publish JSON sensor readings over MQTT v5 from a Java app to a Delta table through the Zerobus Ingest MQTT endpoint, with a required rescue column for records that don't match the table
 * [LangChain OpenInference Zerobus](./example_clients/langchain_openinference_zerobus/) - Send a LangChain or LangGraph agent's OpenInference traces into a Delta table through the OpenTelemetry Collector and Zerobus Ingest, with no token code in the agent
+* [LlamaIndex Zerobus](./example_clients/llamaindex_zerobus/) - Send LlamaIndex query-engine spans to Delta tables via Zerobus, through the OpenTelemetry Collector (which gets and refreshes the OAuth token); runs offline with mock models
 
 *Coming soon* - MQTT and more.
 
