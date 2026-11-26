@@ -62,6 +62,7 @@ If your contribution is a **complete, narrative-driven showcase** with data gene
 | [`mqtt_paho_python_zerobus`](mqtt_paho_python_zerobus/) | MQTT v5 via Eclipse Paho | Python | A dice-roll publisher sends JSON records over MQTT to the Zerobus Ingest MQTT endpoint, reconnecting with a fresh OAuth token and tracking PUBACKs |
 | [`mqtt_paho_java_zerobus`](mqtt_paho_java_zerobus/) | MQTT v5 (Eclipse Paho Java) | Java | Publishes JSON sensor readings from a Java simulator over MQTT v5 to a Delta table through the Zerobus Ingest MQTT endpoint, with a required rescue column for records that don't match the table |
 | [`langchain_openinference_zerobus`](langchain_openinference_zerobus/) | LangChain and LangGraph agent traces via OpenInference | Python, Collector config | A LangChain agent instrumented with Arize's OpenInference instrumentor sends its traces through the OpenTelemetry Collector's `oauth2client` extension to a Zerobus Ingest spans table, with no token code in the agent |
+| [`kafka_connect_zerobus`](kafka_connect_zerobus/) | Kafka topics via Kafka Connect | Java (Kafka Connect sink), Docker Compose, SQL | A sink connector that writes Kafka records to Delta tables through Zerobus Ingest (JSON or Arrow), with routing, auto-create, additive schema evolution, a dead-letter table and at-least-once delivery |
 
 ## Planned Clients
 
