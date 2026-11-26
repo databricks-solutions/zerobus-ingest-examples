@@ -1,0 +1,9 @@
+# Pinned to the versions tested in the Zerobus testing zone on 2026-11-25.
+# Each pin was checked against the GitHub security advisories of its repository on that date.
+openinference-instrumentation-langchain==0.1.87
+langchain==1.5.0
+langchain-core==1.8.2
+langgraph==1.2.22
+opentelemetry-api==1.45.2
+opentelemetry-sdk==1.45.2
+opentelemetry-exporter-otlp-proto-http==1.45.2
